@@ -175,5 +175,4 @@ export function SettingsModal({ isOpen, onClose, settings, onSaveSettings }: Set
       </div>
     </div>
   );
-
-After updating the file with this corrected code, commit the changes and try deploying to Vercel again. The build should now pass successfully.
+}
