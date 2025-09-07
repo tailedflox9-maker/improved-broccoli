@@ -23,7 +23,7 @@ export default function ChatPage() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   
-  // FIX: Add quiz-related state
+  // Quiz-related state
   const [isQuizLoading, setIsQuizLoading] = useState(false);
   const [currentQuizSession, setCurrentQuizSession] = useState<StudySession | null>(null);
   const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
@@ -100,7 +100,7 @@ export default function ChatPage() {
     }
   }, [createNewConversation]);
 
-  // FIX: Initialize conversations with user-specific storage
+  // FIXED: Initialize conversations without auto-creation
   useEffect(() => {
     if (!profile || initialized) return;
     
@@ -110,25 +110,21 @@ export default function ChatPage() {
     const storedConversations = storageUtils.getConversations(profile.id);
     setConversations(storedConversations);
     
-    let conversationToSelect = null;
-    
-    if (storedConversations.length === 0) {
-      conversationToSelect = createNewConversation(false);
-    } else {
+    // FIXED: Don't auto-create conversation, let user start manually
+    if (storedConversations.length > 0) {
       const sorted = [...storedConversations].sort((a, b) => 
         b.updated_at.getTime() - a.updated_at.getTime()
       );
-      conversationToSelect = sorted[0];
-    }
-    
-    if (conversationToSelect) {
-      setCurrentConversationId(conversationToSelect.id);
+      setCurrentConversationId(sorted[0].id);
+    } else {
+      // FIXED: Set to null when no conversations exist
+      setCurrentConversationId(null);
     }
     
     setInitialized(true);
-  }, [profile, initialized, createNewConversation]);
+  }, [profile, initialized]); // Removed createNewConversation dependency
 
-  // FIX: Save conversations with user-specific storage
+  // Save conversations with user-specific storage
   useEffect(() => { 
     if (initialized && profile) { 
       storageUtils.saveConversations(conversations, profile.id); 
@@ -155,23 +151,32 @@ export default function ChatPage() {
   }, [handleSwitchToChatView]);
 
   const handleSendMessage = useCallback(async (content: string) => {
-    if (!profile || !currentConversationId) return;
+    if (!profile) return;
+    
+    // If no current conversation, create one
+    let conversationId = currentConversationId;
+    if (!conversationId) {
+      const newConv = createNewConversation(false);
+      if (!newConv) return;
+      conversationId = newConv.id;
+      setCurrentConversationId(conversationId);
+    }
     
     const userMessage: Message = { 
       id: generateId(), 
-      conversation_id: currentConversationId, 
+      conversation_id: conversationId, 
       user_id: profile.id, 
       content, 
       role: 'user', 
       created_at: new Date() 
     };
     
-    const currentConv = conversations.find(c => c.id === currentConversationId);
+    const currentConv = conversations.find(c => c.id === conversationId);
     if (!currentConv) return;
     
     const isFirstMessage = currentConv.messages.length === 0;
     
-    setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+    setConversations(prev => prev.map(c => c.id === conversationId ? { 
       ...c, 
       title: isFirstMessage ? generateConversationTitle(content) : c.title, 
       messages: [...c.messages, userMessage], 
@@ -184,7 +189,7 @@ export default function ChatPage() {
     try {
       const assistantMessage: Message = { 
         id: generateId(), 
-        conversation_id: currentConversationId, 
+        conversation_id: conversationId, 
         user_id: profile.id, 
         content: '', 
         role: 'assistant', 
@@ -203,7 +208,7 @@ export default function ChatPage() {
       }
       
       if (!stopStreamingRef.current) {
-        setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+        setConversations(prev => prev.map(c => c.id === conversationId ? { 
           ...c, 
           messages: [...c.messages, { ...assistantMessage, content: fullResponse }] 
         } : c));
@@ -211,11 +216,11 @@ export default function ChatPage() {
     } catch (error) {
       console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+      setConversations(prev => prev.map(c => c.id === conversationId ? { 
         ...c, 
         messages: [...c.messages, { 
           id: generateId(), 
-          conversation_id: currentConversationId, 
+          conversation_id: conversationId, 
           user_id: profile.id, 
           role: 'assistant', 
           content: errorContent, 
@@ -227,9 +232,9 @@ export default function ChatPage() {
       setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
-  }, [profile, currentConversationId, conversations, settings.selectedModel]);
+  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
 
-  // FIX: Add quiz generation functionality
+  // Quiz generation functionality
   const handleGenerateQuiz = useCallback(async () => {
     if (!currentConversation || currentConversation.messages.length < 2) {
       console.warn('Need at least 2 messages to generate quiz');
@@ -243,13 +248,13 @@ export default function ChatPage() {
       setIsQuizModalOpen(true);
     } catch (error) {
       console.error('Error generating quiz:', error);
-      // You might want to show a toast notification here
       alert(`Failed to generate quiz: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsQuizLoading(false);
     }
   }, [currentConversation]);
 
+  // FIXED: Delete conversation without auto-creation
   const handleDeleteConversation = useCallback((id: string) => {
     const remaining = conversations.filter(c => c.id !== id);
     setConversations(remaining);
@@ -259,11 +264,11 @@ export default function ChatPage() {
         const sorted = [...remaining].sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime());
         setCurrentConversationId(sorted[0].id);
       } else {
-        const newConv = createNewConversation(true);
-        if (newConv) setCurrentConversationId(newConv.id);
+        // FIXED: Set to null when no conversations remain, don't auto-create
+        setCurrentConversationId(null);
       }
     }
-  }, [conversations, currentConversationId, createNewConversation]);
+  }, [conversations, currentConversationId]); // Removed createNewConversation dependency
 
   const handleRenameConversation = useCallback((id: string, newTitle: string) => {
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
@@ -367,7 +372,6 @@ export default function ChatPage() {
         onSaveSettings={setSettings} 
       />
       
-      {/* FIX: Add QuizModal */}
       <QuizModal
         isOpen={isQuizModalOpen}
         onClose={() => {
