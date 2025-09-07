@@ -1,3 +1,6 @@
+================================================
+FILE: src/components/SettingsModal.tsx
+================================================
 import React, { useState, useCallback } from 'react';
 import { X, Check, Bot, Palette, Shield, Trash2, Download, Upload, Moon, Sun, Monitor } from 'lucide-react';
 import { APISettings } from '../types';
@@ -21,25 +24,7 @@ export function SettingsModal({
   const [theme, setTheme] = useState(() => localStorage.getItem('ai-tutor-theme') || 'dark');
   const [fontSize, setFontSize] = useState(() => localStorage.getItem('ai-tutor-font-size') || 'medium');
 
-  if (!isOpen) return null;
-
-  const handleModelChange = (model: APISettings['selectedModel']) => {
-    onSaveSettings({ ...settings, selectedModel: model });
-  };
-
-  const handleThemeChange = (newTheme: string) => {
-    setTheme(newTheme);
-    localStorage.setItem('ai-tutor-theme', newTheme);
-    // Apply theme to document
-    document.documentElement.setAttribute('data-theme', newTheme);
-  };
-
-  const handleFontSizeChange = (size: string) => {
-    setFontSize(size);
-    localStorage.setItem('ai-tutor-font-size', size);
-    document.documentElement.setAttribute('data-font-size', size);
-  };
-
+  // FIX: Moved useCallback hooks before the conditional return to respect the Rules of Hooks.
   const handleExportData = useCallback(() => {
     try {
       const data = {
@@ -94,6 +79,25 @@ export function SettingsModal({
       alert('All data cleared. Please refresh the page.');
     }
   }, []);
+
+  if (!isOpen) return null;
+
+  const handleModelChange = (model: APISettings['selectedModel']) => {
+    onSaveSettings({ ...settings, selectedModel: model });
+  };
+
+  const handleThemeChange = (newTheme: string) => {
+    setTheme(newTheme);
+    localStorage.setItem('ai-tutor-theme', newTheme);
+    // Apply theme to document
+    document.documentElement.setAttribute('data-theme', newTheme);
+  };
+
+  const handleFontSizeChange = (size: string) => {
+    setFontSize(size);
+    localStorage.setItem('ai-tutor-font-size', size);
+    document.documentElement.setAttribute('data-font-size', size);
+  };
 
   const models = [
     { id: 'google', name: 'Google Gemini Flash', description: 'Fast and efficient for general conversations', status: 'Available' },
