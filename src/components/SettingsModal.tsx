@@ -1,6 +1,3 @@
-================================================
-FILE: src/components/SettingsModal.tsx
-================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Check, Bot, Database, Download, Upload, Trash2, Monitor, Settings } from 'lucide-react';
 import { APISettings } from '../types';
@@ -178,4 +175,5 @@ export function SettingsModal({ isOpen, onClose, settings, onSaveSettings }: Set
       </div>
     </div>
   );
-}
+
+After updating the file with this corrected code, commit the changes and try deploying to Vercel again. The build should now pass successfully.
