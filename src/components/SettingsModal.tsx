@@ -1,6 +1,3 @@
-================================================
-FILE: src/components/SettingsModal.tsx
-================================================
 import React, { useState, useCallback } from 'react';
 import { X, Check, Bot, Palette, Shield, Trash2, Download, Upload, Moon, Sun, Monitor } from 'lucide-react';
 import { APISettings } from '../types';
