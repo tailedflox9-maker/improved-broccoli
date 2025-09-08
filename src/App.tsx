@@ -1,3 +1,6 @@
+================================================
+FILE: src/App.tsx
+================================================
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
@@ -26,18 +29,39 @@ function App() {
   // Show loading screen while auth is initializing, but with a more reasonable timeout
   if (loading) {
     return (
-        <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
-            <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                <p className="text-lg">Initializing AI Tutor...</p>
-                <p className="text-sm text-gray-400 mt-2">Please wait while we set up your session</p>
+        // Use the consistent grid background from the rest of the app
+        <div className="flex h-screen w-screen items-center justify-center bg-grid-slate-900 text-white p-4">
+            
+            {/* Add a subtle gradient overlay for depth, similar to LoginPage */}
+            <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-transparent to-black/50" />
+
+            <div className="relative z-10 text-center max-w-sm w-full animate-fade-in-up">
+                {/* Use the app logo with a subtle pulsing animation */}
+                <img
+                    src="/white-logo.png"
+                    alt="AI Tutor Logo"
+                    className="w-24 h-24 mx-auto mb-6 pulse-subtle"
+                />
+
+                {/* Improve typography */}
+                <h1 className="text-3xl font-bold text-white mb-2">
+                    Initializing AI Tutor
+                </h1>
+                <p className="text-gray-400 mb-8">
+                    Please wait while we set up your session.
+                </p>
+
+                {/* Use the existing shimmer animation for the loading bar */}
+                <div className="w-full bg-black/20 border border-white/10 rounded-full h-2.5 overflow-hidden backdrop-blur-sm">
+                    <div className="animate-shimmer h-2.5" />
+                </div>
                 
-                {/* Add a manual override button after some time */}
-                <button 
-                    onClick={() => window.location.reload()} 
-                    className="mt-6 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
+                {/* Style the refresh button to be less intrusive */}
+                <button
+                    onClick={() => window.location.reload()}
+                    className="mt-8 text-sm font-semibold text-gray-400 hover:text-white transition-colors py-2 px-4 rounded-lg hover:bg-white/5"
                 >
-                    Refresh Page
+                    Taking too long? Refresh
                 </button>
             </div>
         </div>
