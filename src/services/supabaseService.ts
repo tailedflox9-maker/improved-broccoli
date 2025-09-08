@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage } from '../types';
 
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
@@ -86,9 +86,23 @@ export const flagMessage = async (flaggedMessage: any) => {
 
 // --- TEACHER DASHBOARD ---
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  const { data, error } = await supabase.from('profiles').select('*').eq('teacher_id', teacherId);
-  if (error) throw error;
+  // Use the new RPC function to securely fetch students
+  const { data, error } = await supabase.rpc('get_my_students');
+  if (error) {
+    console.error('Error fetching students for teacher:', error);
+    throw error;
+  }
   return data as Profile[];
+};
+
+export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
+    // Use the new RPC function to securely fetch messages
+    const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
+    if (error) {
+        console.error('Error fetching flagged messages:', error);
+        throw error;
+    }
+    return data as FlaggedMessage[];
 };
 
 export const getStudentStats = async (studentId: string) => {
@@ -107,164 +121,62 @@ export const getStudentStats = async (studentId: string) => {
 // --- ADMIN PANEL - ENHANCED WITH BETTER ERROR HANDLING ---
 export const getAllUsers = async (): Promise<Profile[]> => {
     try {
-        // First, try with RPC function for admin users
         const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_users_admin');
-        
         if (!rpcError && rpcData) {
-            console.log('Successfully fetched users with RPC:', rpcData.length);
             return rpcData as Profile[];
         }
-
-        console.log('RPC failed or not available, trying direct query:', rpcError);
-        
-        // Fallback: direct query (may be restricted by RLS)
-        const { data: directData, error: directError } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-            
+        const { data: directData, error: directError } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
         if (directError) {
-            console.error('Direct query also failed:', directError);
-            throw new Error(`Unable to fetch users. Please ensure you have admin privileges. Error: ${directError.message}`);
+            throw new Error(`Unable to fetch users. Error: ${directError.message}`);
         }
-        
-        console.log('Successfully fetched users with direct query:', directData.length);
         return directData as Profile[];
-        
     } catch (error: any) {
-        console.error('getAllUsers comprehensive error:', error);
         throw new Error(`Unable to fetch user data: ${error.message}`);
     }
 };
 
 export const createUser = async (userData: { email: string; password: string; full_name: string; role: 'student' | 'teacher' }): Promise<any> => {
   try {
-    console.log('Creating user with Supabase Auth Admin API...', { 
-      email: userData.email, 
-      full_name: userData.full_name,
-      role: userData.role 
-    });
-    
-    // Validation
-    if (!userData.email?.trim()) {
-      throw new Error('Email is required');
-    }
-    if (!userData.password?.trim() || userData.password.length < 6) {
-      throw new Error('Password must be at least 6 characters long');
-    }
-    if (!userData.full_name?.trim()) {
-      throw new Error('Full name is required');
-    }
-    if (!['student', 'teacher'].includes(userData.role)) {
-      throw new Error('Role must be either student or teacher');
-    }
+    if (!userData.email?.trim()) throw new Error('Email is required');
+    if (!userData.password?.trim() || userData.password.length < 6) throw new Error('Password must be at least 6 characters long');
+    if (!userData.full_name?.trim()) throw new Error('Full name is required');
+    if (!['student', 'teacher'].includes(userData.role)) throw new Error('Role must be either student or teacher');
 
-    // Get admin client
     const adminClient = getAdminClient();
-
-    // Create user using Admin API
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: userData.email.trim(),
       password: userData.password.trim(),
       email_confirm: true,
-      user_metadata: { 
-        full_name: userData.full_name.trim(), 
-        role: userData.role 
-      }
+      user_metadata: { full_name: userData.full_name.trim(), role: userData.role }
     });
     
-    if (authError) {
-      console.error('Auth creation error:', authError);
-      throw new Error(`Failed to create user account: ${authError.message}`);
-    }
-
-    if (!authData.user) {
-      throw new Error('User creation succeeded but no user data returned');
-    }
-
-    console.log('User created successfully:', authData.user.id);
-
-    // Wait a bit for the trigger to create the profile
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // Update the profile with correct data (in case trigger didn't work properly)
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .upsert({ 
-        id: authData.user.id,
-        email: userData.email.trim(),
-        full_name: userData.full_name.trim(), 
-        role: userData.role 
-      }, {
-        onConflict: 'id'
-      })
-      .select()
-      .single();
+    if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
+    if (!authData.user) throw new Error('User creation succeeded but no user data returned');
     
-    if (profileError) {
-      console.warn(`User created but profile upsert failed: ${profileError.message}`);
-      // Try a simple update instead
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ 
-          full_name: userData.full_name.trim(), 
-          role: userData.role 
-        })
-        .eq('id', authData.user.id);
-      
-      if (updateError) {
-        console.warn(`Profile update also failed: ${updateError.message}`);
-      }
-    }
-
-    console.log('Profile data after creation:', profileData);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
     return authData.user;
     
   } catch (error: any) {
-    console.error('createUser comprehensive error:', error);
-    
-    // Better error messages
-    if (error.message?.includes('already registered')) {
-      throw new Error('A user with this email address already exists');
-    }
-    if (error.message?.includes('invalid email')) {
-      throw new Error('Please provide a valid email address');
-    }
-    if (error.message?.includes('weak password')) {
-      throw new Error('Password is too weak. Please use at least 6 characters');
-    }
-    
+    if (error.message?.includes('already registered')) throw new Error('A user with this email address already exists');
     throw new Error(error.message || 'Failed to create user');
   }
 };
 
 export const assignTeacherToStudent = async (teacherId: string, studentId: string): Promise<void> => {
   try {
-    // Basic validation
-    if (!teacherId?.trim() || !studentId?.trim()) {
-      throw new Error('Teacher and Student IDs are required.');
-    }
-    if (teacherId === studentId) {
-      throw new Error('A user cannot be assigned to themselves.');
-    }
+    if (!teacherId?.trim() || !studentId?.trim()) throw new Error('Teacher and Student IDs are required.');
+    if (teacherId === studentId) throw new Error('A user cannot be assigned to themselves.');
 
     const adminClient = getAdminClient();
-
-    // Perform the assignment using the admin client to bypass RLS
     const { error } = await adminClient
       .from('profiles')
       .update({ teacher_id: teacherId })
       .eq('id', studentId);
 
-    if (error) {
-      console.error('Assignment update error:', error);
-      throw new Error(`Failed to assign teacher: ${error.message}`);
-    }
+    if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
     
-    console.log(`Successfully assigned student ${studentId} to teacher ${teacherId}`);
-
   } catch (error: any) {
-    console.error('assignTeacherToStudent error:', error);
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
