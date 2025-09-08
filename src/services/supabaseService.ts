@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabase, getAdminClient } from '../supabase';
 import { Profile, Conversation, Note, Quiz } from '../types';
 
 // --- PROFILE & USER MGMT ---
@@ -142,14 +142,11 @@ export const createUser = async (userData: { email: string; password: string; fu
       throw new Error('Role must be either student or teacher');
     }
 
-    // Store current session to restore later
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-    if (!currentSession) {
-      throw new Error('Admin not authenticated');
-    }
+    // Get admin client
+    const adminClient = getAdminClient();
 
     // Create user using Admin API
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: userData.email.trim(),
       password: userData.password.trim(),
       email_confirm: true,
@@ -185,19 +182,6 @@ export const createUser = async (userData: { email: string; password: string; fu
     if (profileError) {
       console.warn(`User created but profile update failed: ${profileError.message}`);
       // Don't throw here as the user was created successfully
-    }
-
-    // Restore the admin session if it was affected
-    try {
-      if (currentSession) {
-        await supabase.auth.setSession({
-          access_token: currentSession.access_token,
-          refresh_token: currentSession.refresh_token
-        });
-      }
-    } catch (sessionError) {
-      console.warn('Failed to restore admin session:', sessionError);
-      // This is not critical, the admin can re-login
     }
 
     return authData.user;
