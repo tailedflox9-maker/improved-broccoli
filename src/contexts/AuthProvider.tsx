@@ -22,152 +22,130 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let isMounted = true;
-    let authInitialized = false;
+    let initTimeout: NodeJS.Timeout;
 
     const initializeAuth = async () => {
       try {
         console.log('Starting authentication initialization...');
 
-        // Get the current session with retries
-        let sessionAttempt = 0;
-        let currentSession = null;
-        let sessionError = null;
-
-        while (sessionAttempt < 3 && !currentSession && !sessionError) {
+        // Set a maximum timeout for the entire initialization process
+        const initPromise = new Promise<void>(async (resolve, reject) => {
           try {
-            const { data: { session: attemptSession }, error: attemptError } = await supabase.auth.getSession();
+            // Get the current session - simplified approach
+            const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
             
-            if (attemptError) {
-              sessionError = attemptError;
-              break;
+            if (sessionError) {
+              console.error('Session retrieval error:', sessionError);
+              throw new Error(`Session error: ${sessionError.message}`);
             }
-            
-            currentSession = attemptSession;
-            break;
-          } catch (err) {
-            sessionAttempt++;
-            if (sessionAttempt < 3) {
-              console.log(`Session retrieval attempt ${sessionAttempt} failed, retrying...`);
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } else {
-              sessionError = err;
+
+            if (!isMounted) {
+              resolve();
+              return;
             }
-          }
-        }
 
-        if (sessionError) {
-          console.error('Session retrieval error after retries:', sessionError);
-          throw new Error(`Failed to retrieve session: ${sessionError.message}`);
-        }
+            console.log('Session status:', currentSession ? 'Active session found' : 'No active session');
+            setSession(currentSession);
 
-        if (!isMounted) return;
-
-        console.log('Session status:', currentSession ? 'Active session found' : 'No active session');
-        setSession(currentSession);
-
-        if (currentSession?.user) {
-          try {
-            console.log('Loading user profile for user:', currentSession.user.id);
-            
-            // Try to get profile with retries and better error handling
-            let profileAttempt = 0;
-            let userProfile = null;
-            let profileError = null;
-
-            while (profileAttempt < 2 && !userProfile && !profileError) {
+            if (currentSession?.user) {
               try {
-                userProfile = await getProfile();
-                break;
-              } catch (err: any) {
-                profileAttempt++;
-                profileError = err;
+                console.log('Loading user profile for user:', currentSession.user.id);
                 
-                if (profileAttempt < 2) {
-                  console.log(`Profile loading attempt ${profileAttempt} failed, retrying...`);
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                } else {
-                  console.error('Profile loading failed after retries:', err);
+                // Try to get profile with a timeout
+                const profilePromise = getProfile();
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('Profile loading timeout')), 8000);
+                });
+
+                const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+                
+                if (isMounted) {
+                  console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
+                  setProfile(userProfile);
+                  setError(null);
+                }
+              } catch (profileError: any) {
+                console.warn('Profile loading failed, creating fallback:', profileError.message);
+                
+                if (isMounted) {
+                  // Create a robust fallback profile
+                  const fallbackProfile: Profile = {
+                    id: currentSession.user.id,
+                    email: currentSession.user.email || 'unknown@example.com',
+                    full_name: currentSession.user.user_metadata?.full_name || 
+                               currentSession.user.email?.split('@')[0] || 'User',
+                    role: currentSession.user.user_metadata?.role || 'student',
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                    teacher_id: currentSession.user.user_metadata?.teacher_id || null
+                  };
+                  
+                  setProfile(fallbackProfile);
+                  setError(null); // Don't treat fallback as an error
+                  console.log('Using fallback profile - app will continue working');
                 }
               }
-            }
-            
-            if (isMounted) {
-              if (userProfile) {
-                console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
-                setProfile(userProfile);
+            } else {
+              if (isMounted) {
+                console.log('No user session - clearing profile');
+                setProfile(null);
                 setError(null);
-              } else {
-                // Create a more robust fallback profile
-                console.warn('Creating fallback profile due to loading issues');
-                const fallbackProfile: Profile = {
-                  id: currentSession.user.id,
-                  email: currentSession.user.email || 'unknown@example.com',
-                  full_name: currentSession.user.user_metadata?.full_name || 
-                             currentSession.user.email?.split('@')[0] || 'User',
-                  role: currentSession.user.user_metadata?.role || 'student',
-                  created_at: new Date(),
-                  updated_at: new Date(),
-                  teacher_id: currentSession.user.user_metadata?.teacher_id || null
-                };
-                
-                setProfile(fallbackProfile);
-                // Don't set error for fallback - just log it
-                console.warn('Using fallback profile due to:', profileError?.message || 'Profile loading failed');
               }
             }
-          } catch (profileError: any) {
-            console.error('Critical profile loading error:', profileError);
-            
-            if (isMounted) {
-              // Even if profile loading fails completely, create a basic fallback
-              const basicFallback: Profile = {
-                id: currentSession.user.id,
-                email: currentSession.user.email || 'unknown@example.com',
-                full_name: currentSession.user.user_metadata?.full_name || 'User',
-                role: 'student', // Default to student if role is unclear
+
+            resolve();
+          } catch (err: any) {
+            reject(err);
+          }
+        });
+
+        // Set a hard timeout for initialization
+        initTimeout = setTimeout(() => {
+          console.warn('Auth initialization timeout - forcing completion');
+          if (isMounted) {
+            setLoading(false);
+            // If we have a session but no profile, create a basic one
+            if (session?.user && !profile) {
+              const basicProfile: Profile = {
+                id: session.user.id,
+                email: session.user.email || 'user@example.com',
+                full_name: 'User',
+                role: 'student',
                 created_at: new Date(),
                 updated_at: new Date(),
                 teacher_id: null
               };
-              
-              console.log('Using basic fallback profile');
-              setProfile(basicFallback);
-              // Only set error if it's truly critical
-              if (profileError.message?.includes('RPC') || profileError.message?.includes('permission')) {
-                setError(new Error('Profile access issue. Please try logging out and back in.'));
-              }
+              setProfile(basicProfile);
             }
           }
-        } else {
-          if (isMounted) {
-            console.log('No user session - clearing profile');
-            setProfile(null);
-            setError(null);
-          }
-        }
+        }, 10000); // 10 second hard limit
 
-        authInitialized = true;
+        await initPromise;
 
       } catch (err: any) {
         console.error('Authentication initialization failed:', err);
         
         if (isMounted) {
-          // Only set critical errors that require user action
+          // Only set error for truly critical issues
           if (err.message?.includes('network') || err.message?.includes('connection')) {
-            setError(new Error('Connection issue. Please check your internet and refresh.'));
-          } else if (err.message?.includes('session')) {
-            setError(new Error('Session expired. Please log in again.'));
+            setError(new Error('Connection issue. Please check your internet.'));
           } else {
             // For other errors, just log them but don't block the user
             console.warn('Non-critical auth error:', err.message);
+            setError(null);
           }
           
-          setSession(null);
-          setProfile(null);
+          // Clear session on critical errors only
+          if (err.message?.includes('Session expired') || err.message?.includes('Invalid session')) {
+            setSession(null);
+            setProfile(null);
+          }
+        }
+      } finally {
+        if (initTimeout) {
+          clearTimeout(initTimeout);
         }
         
-        authInitialized = true;
-      } finally {
         if (isMounted) {
           console.log('Authentication initialization complete - stopping loading');
           setLoading(false);
@@ -185,50 +163,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (!isMounted) return;
 
+        // Clear any existing errors on auth changes
+        setError(null);
+
         // For sign out events, clear immediately
         if (event === 'SIGNED_OUT') {
           console.log('User signed out - clearing all state');
           setSession(null);
           setProfile(null);
-          setError(null);
           setLoading(false);
           return;
         }
 
         // Update session state
         setSession(newSession);
-        setError(null);
 
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (newSession?.user) {
-            try {
-              console.log('Loading profile after auth change...');
-              const userProfile = await getProfile();
+        // For sign in or token refresh, load profile
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
+          try {
+            console.log('Loading profile after auth change...');
+            
+            // Quick profile load with timeout
+            const profilePromise = getProfile();
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Profile timeout')), 5000);
+            });
+
+            const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+            
+            if (isMounted) {
+              console.log('Profile updated after auth change');
+              setProfile(userProfile);
+            }
+          } catch (profileError: any) {
+            console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
+            
+            if (isMounted) {
+              // Create fallback instead of failing
+              const fallbackProfile: Profile = {
+                id: newSession.user.id,
+                email: newSession.user.email || 'unknown@example.com',
+                full_name: newSession.user.user_metadata?.full_name || 'User',
+                role: newSession.user.user_metadata?.role || 'student',
+                created_at: new Date(),
+                updated_at: new Date(),
+                teacher_id: newSession.user.user_metadata?.teacher_id || null
+              };
               
-              if (isMounted) {
-                console.log('Profile updated after auth change');
-                setProfile(userProfile);
-              }
-            } catch (profileError: any) {
-              console.error('Profile loading failed after auth change:', profileError);
-              
-              if (isMounted) {
-                // Create fallback instead of failing completely
-                const fallbackProfile: Profile = {
-                  id: newSession.user.id,
-                  email: newSession.user.email || 'unknown@example.com',
-                  full_name: newSession.user.user_metadata?.full_name || 'User',
-                  role: newSession.user.user_metadata?.role || 'student',
-                  created_at: new Date(),
-                  updated_at: new Date(),
-                  teacher_id: newSession.user.user_metadata?.teacher_id || null
-                };
-                
-                setProfile(fallbackProfile);
-                console.log('Using fallback profile after auth change');
-              }
+              setProfile(fallbackProfile);
+              console.log('Using fallback profile after auth change');
             }
           }
+        }
+
+        // Ensure loading is always set to false after auth state changes
+        if (isMounted) {
+          setLoading(false);
         }
       }
     );
@@ -236,6 +226,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       console.log('AuthProvider cleanup');
       isMounted = false;
+      if (initTimeout) {
+        clearTimeout(initTimeout);
+      }
       authListener.subscription.unsubscribe();
     };
   }, []);
