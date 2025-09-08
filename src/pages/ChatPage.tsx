@@ -100,7 +100,7 @@ export default function ChatPage() {
     }
   }, [createNewConversation]);
 
-  // FIXED: Initialize conversations without auto-creation
+  // Initialize conversations without auto-creation
   useEffect(() => {
     if (!profile || initialized) return;
     
@@ -110,19 +110,19 @@ export default function ChatPage() {
     const storedConversations = storageUtils.getConversations(profile.id);
     setConversations(storedConversations);
     
-    // FIXED: Don't auto-create conversation, let user start manually
+    // Don't auto-create conversation, let user start manually
     if (storedConversations.length > 0) {
       const sorted = [...storedConversations].sort((a, b) => 
         b.updated_at.getTime() - a.updated_at.getTime()
       );
       setCurrentConversationId(sorted[0].id);
     } else {
-      // FIXED: Set to null when no conversations exist
+      // Set to null when no conversations exist
       setCurrentConversationId(null);
     }
     
     setInitialized(true);
-  }, [profile, initialized]); // Removed createNewConversation dependency
+  }, [profile, initialized]);
 
   // Save conversations with user-specific storage
   useEffect(() => { 
@@ -153,12 +153,15 @@ export default function ChatPage() {
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) return;
     
-    // If no current conversation, create one
     let conversationId = currentConversationId;
-    if (!conversationId) {
+    let targetConversation = conversations.find(c => c.id === conversationId);
+    
+    // If no current conversation or current conversation doesn't exist, create one
+    if (!conversationId || !targetConversation) {
       const newConv = createNewConversation(false);
       if (!newConv) return;
       conversationId = newConv.id;
+      targetConversation = newConv;
       setCurrentConversationId(conversationId);
     }
     
@@ -171,11 +174,9 @@ export default function ChatPage() {
       created_at: new Date() 
     };
     
-    const currentConv = conversations.find(c => c.id === conversationId);
-    if (!currentConv) return;
+    const isFirstMessage = targetConversation.messages.length === 0;
     
-    const isFirstMessage = currentConv.messages.length === 0;
-    
+    // Update conversation with user message
     setConversations(prev => prev.map(c => c.id === conversationId ? { 
       ...c, 
       title: isFirstMessage ? generateConversationTitle(content) : c.title, 
@@ -198,7 +199,13 @@ export default function ChatPage() {
       };
       
       setStreamingMessage(assistantMessage);
-      const messagesForApi = [...currentConv.messages, userMessage].map(m => ({ role: m.role, content: m.content }));
+      
+      // Get updated conversation for API call
+      const updatedConv = conversations.find(c => c.id === conversationId);
+      const messagesForApi = [...(updatedConv?.messages || []), userMessage].map(m => ({ 
+        role: m.role, 
+        content: m.content 
+      }));
       
       let fullResponse = '';
       for await (const chunk of aiService.generateStreamingResponse(messagesForApi)) {
@@ -207,10 +214,11 @@ export default function ChatPage() {
         setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
       }
       
-      if (!stopStreamingRef.current) {
+      if (!stopStreamingRef.current && fullResponse.trim()) {
         setConversations(prev => prev.map(c => c.id === conversationId ? { 
           ...c, 
-          messages: [...c.messages, { ...assistantMessage, content: fullResponse }] 
+          messages: [...c.messages, { ...assistantMessage, content: fullResponse }],
+          updated_at: new Date()
         } : c));
       }
     } catch (error) {
@@ -225,7 +233,8 @@ export default function ChatPage() {
           role: 'assistant', 
           content: errorContent, 
           created_at: new Date() 
-        }] 
+        }],
+        updated_at: new Date()
       } : c));
     } finally {
       setIsChatLoading(false);
@@ -254,21 +263,24 @@ export default function ChatPage() {
     }
   }, [currentConversation]);
 
-  // FIXED: Delete conversation without auto-creation
+  // Fixed delete conversation handler
   const handleDeleteConversation = useCallback((id: string) => {
-    const remaining = conversations.filter(c => c.id !== id);
-    setConversations(remaining);
-    
-    if (currentConversationId === id) {
-      if (remaining.length > 0) {
-        const sorted = [...remaining].sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime());
-        setCurrentConversationId(sorted[0].id);
-      } else {
-        // FIXED: Set to null when no conversations remain, don't auto-create
-        setCurrentConversationId(null);
+    setConversations(prev => {
+      const remaining = prev.filter(c => c.id !== id);
+      
+      // If we're deleting the current conversation
+      if (currentConversationId === id) {
+        if (remaining.length > 0) {
+          const sorted = [...remaining].sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime());
+          setCurrentConversationId(sorted[0].id);
+        } else {
+          setCurrentConversationId(null);
+        }
       }
-    }
-  }, [conversations, currentConversationId]); // Removed createNewConversation dependency
+      
+      return remaining;
+    });
+  }, [currentConversationId]);
 
   const handleRenameConversation = useCallback((id: string, newTitle: string) => {
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
