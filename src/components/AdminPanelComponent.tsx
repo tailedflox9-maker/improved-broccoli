@@ -65,10 +65,12 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   }, []);
 
   useEffect(() => {
-    let filtered = users.filter(user => 
-      user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let filtered = users.filter(user => {
+      const searchQuery = searchTerm.toLowerCase();
+      const nameMatch = user.full_name?.toLowerCase().includes(searchQuery) || false;
+      const emailMatch = user.email.toLowerCase().includes(searchQuery);
+      return nameMatch || emailMatch;
+    });
     if (filterRole !== 'all') {
       filtered = filtered.filter(user => user.role === filterRole);
     }
@@ -125,8 +127,10 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
       setFullName('');
       setRole('student');
       
-      // Refresh users list
-      await fetchUsers();
+      // Refresh users list after a short delay
+      setTimeout(async () => {
+        await fetchUsers();
+      }, 2000);
       
       // Clear success message after 5 seconds
       setTimeout(() => setCreateSuccess(null), 5000);
@@ -466,7 +470,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                                                 </div>
                                                 <div>
                                                   <p className="font-semibold text-white">
-                                                    {user.full_name || 'No Name'}
+                                                    {user.full_name && user.full_name.trim() ? user.full_name : 'No Name Set'}
                                                   </p>
                                                   <p className="text-gray-400">{user.email}</p>
                                                 </div>
