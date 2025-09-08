@@ -24,26 +24,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let isMounted = true;
     let authInitialized = false;
 
-    const forceStopLoading = () => {
-      if (isMounted && !authInitialized) {
-        console.log('Force stopping loading - auth setup took too long');
-        setLoading(false);
-        setError(new Error('Authentication setup timed out. Please refresh and try again.'));
-      }
-    };
-
-    // Set a 8-second timeout to prevent infinite loading
-    const timeoutId = setTimeout(forceStopLoading, 8000);
-
     const initializeAuth = async () => {
       try {
         console.log('Starting authentication initialization...');
 
-        // Get the current session
-        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        // Get the current session with retries
+        let sessionAttempt = 0;
+        let currentSession = null;
+        let sessionError = null;
+
+        while (sessionAttempt < 3 && !currentSession && !sessionError) {
+          try {
+            const { data: { session: attemptSession }, error: attemptError } = await supabase.auth.getSession();
+            
+            if (attemptError) {
+              sessionError = attemptError;
+              break;
+            }
+            
+            currentSession = attemptSession;
+            break;
+          } catch (err) {
+            sessionAttempt++;
+            if (sessionAttempt < 3) {
+              console.log(`Session retrieval attempt ${sessionAttempt} failed, retrying...`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } else {
+              sessionError = err;
+            }
+          }
+        }
 
         if (sessionError) {
-          console.error('Session retrieval error:', sessionError);
+          console.error('Session retrieval error after retries:', sessionError);
           throw new Error(`Failed to retrieve session: ${sessionError.message}`);
         }
 
@@ -56,36 +69,73 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           try {
             console.log('Loading user profile for user:', currentSession.user.id);
             
-            // Add timeout to profile loading
-            const profilePromise = getProfile();
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Profile loading timeout')), 5000);
-            });
-            
-            const userProfile = await Promise.race([profilePromise, timeoutPromise]) as any;
+            // Try to get profile with retries and better error handling
+            let profileAttempt = 0;
+            let userProfile = null;
+            let profileError = null;
+
+            while (profileAttempt < 2 && !userProfile && !profileError) {
+              try {
+                userProfile = await getProfile();
+                break;
+              } catch (err: any) {
+                profileAttempt++;
+                profileError = err;
+                
+                if (profileAttempt < 2) {
+                  console.log(`Profile loading attempt ${profileAttempt} failed, retrying...`);
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                  console.error('Profile loading failed after retries:', err);
+                }
+              }
+            }
             
             if (isMounted) {
-              console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
-              setProfile(userProfile);
-              setError(null);
+              if (userProfile) {
+                console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
+                setProfile(userProfile);
+                setError(null);
+              } else {
+                // Create a more robust fallback profile
+                console.warn('Creating fallback profile due to loading issues');
+                const fallbackProfile: Profile = {
+                  id: currentSession.user.id,
+                  email: currentSession.user.email || 'unknown@example.com',
+                  full_name: currentSession.user.user_metadata?.full_name || 
+                             currentSession.user.email?.split('@')[0] || 'User',
+                  role: currentSession.user.user_metadata?.role || 'student',
+                  created_at: new Date(),
+                  updated_at: new Date(),
+                  teacher_id: currentSession.user.user_metadata?.teacher_id || null
+                };
+                
+                setProfile(fallbackProfile);
+                // Don't set error for fallback - just log it
+                console.warn('Using fallback profile due to:', profileError?.message || 'Profile loading failed');
+              }
             }
           } catch (profileError: any) {
-            console.error('Failed to load user profile:', profileError);
+            console.error('Critical profile loading error:', profileError);
             
             if (isMounted) {
-              // Create a fallback profile to prevent blocking
-              const fallbackProfile = {
+              // Even if profile loading fails completely, create a basic fallback
+              const basicFallback: Profile = {
                 id: currentSession.user.id,
                 email: currentSession.user.email || 'unknown@example.com',
                 full_name: currentSession.user.user_metadata?.full_name || 'User',
-                role: currentSession.user.user_metadata?.role || 'student',
+                role: 'student', // Default to student if role is unclear
                 created_at: new Date(),
-                updated_at: new Date()
+                updated_at: new Date(),
+                teacher_id: null
               };
               
-              console.log('Using fallback profile:', fallbackProfile);
-              setProfile(fallbackProfile);
-              setError(new Error(`Profile loading issue (using fallback): ${profileError.message}`));
+              console.log('Using basic fallback profile');
+              setProfile(basicFallback);
+              // Only set error if it's truly critical
+              if (profileError.message?.includes('RPC') || profileError.message?.includes('permission')) {
+                setError(new Error('Profile access issue. Please try logging out and back in.'));
+              }
             }
           }
         } else {
@@ -102,7 +152,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.error('Authentication initialization failed:', err);
         
         if (isMounted) {
-          setError(err);
+          // Only set critical errors that require user action
+          if (err.message?.includes('network') || err.message?.includes('connection')) {
+            setError(new Error('Connection issue. Please check your internet and refresh.'));
+          } else if (err.message?.includes('session')) {
+            setError(new Error('Session expired. Please log in again.'));
+          } else {
+            // For other errors, just log them but don't block the user
+            console.warn('Non-critical auth error:', err.message);
+          }
+          
           setSession(null);
           setProfile(null);
         }
@@ -112,7 +171,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (isMounted) {
           console.log('Authentication initialization complete - stopping loading');
           setLoading(false);
-          clearTimeout(timeoutId);
         }
       }
     };
@@ -126,6 +184,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log('Auth state change detected:', event);
 
         if (!isMounted) return;
+
+        // For sign out events, clear immediately
+        if (event === 'SIGNED_OUT') {
+          console.log('User signed out - clearing all state');
+          setSession(null);
+          setProfile(null);
+          setError(null);
+          setLoading(false);
+          return;
+        }
 
         // Update session state
         setSession(newSession);
@@ -145,15 +213,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               console.error('Profile loading failed after auth change:', profileError);
               
               if (isMounted) {
-                setProfile(null);
-                setError(new Error(`Profile loading failed: ${profileError.message}`));
+                // Create fallback instead of failing completely
+                const fallbackProfile: Profile = {
+                  id: newSession.user.id,
+                  email: newSession.user.email || 'unknown@example.com',
+                  full_name: newSession.user.user_metadata?.full_name || 'User',
+                  role: newSession.user.user_metadata?.role || 'student',
+                  created_at: new Date(),
+                  updated_at: new Date(),
+                  teacher_id: newSession.user.user_metadata?.teacher_id || null
+                };
+                
+                setProfile(fallbackProfile);
+                console.log('Using fallback profile after auth change');
               }
             }
-          }
-        } else if (event === 'SIGNED_OUT') {
-          console.log('User signed out - clearing profile');
-          if (isMounted) {
-            setProfile(null);
           }
         }
       }
@@ -162,7 +236,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       console.log('AuthProvider cleanup');
       isMounted = false;
-      clearTimeout(timeoutId);
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -171,7 +244,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       console.log('Initiating logout...');
       
-      // Clear local state immediately
+      // Clear local state immediately to prevent UI flickering
+      setLoading(true);
       setProfile(null);
       setError(null);
       
@@ -185,10 +259,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       console.log('Logout successful');
       setSession(null);
+      setLoading(false);
       
     } catch (error: any) {
       console.error('Error during logout:', error);
-      setError(new Error(`Logout failed: ${error.message}`));
+      // Even if logout fails, clear local state
+      setSession(null);
+      setProfile(null);
+      setError(null);
+      setLoading(false);
     }
   }, []);
 
