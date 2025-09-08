@@ -86,8 +86,8 @@ export const flagMessage = async (flaggedMessage: any) => {
 
 // --- TEACHER DASHBOARD ---
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  // Use the new RPC function to securely fetch students
-  const { data, error } = await supabase.rpc('get_my_students');
+  // Use the new, explicit RPC function to securely fetch students
+  const { data, error } = await supabase.rpc('get_students_for_teacher', { teacher_id_param: teacherId });
   if (error) {
     console.error('Error fetching students for teacher:', error);
     throw error;
@@ -96,7 +96,7 @@ export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[
 };
 
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    // Use the new RPC function to securely fetch messages
+    // Use the RPC function to securely fetch messages
     const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
     if (error) {
         console.error('Error fetching flagged messages:', error);
