@@ -107,17 +107,30 @@ export const getStudentStats = async (studentId: string) => {
 // --- ADMIN PANEL - ENHANCED WITH BETTER ERROR HANDLING ---
 export const getAllUsers = async (): Promise<Profile[]> => {
     try {
-        const { data, error } = await supabase.rpc('get_all_users_admin');
-        if (error) {
-            console.error("Error fetching users with RPC:", error);
-            // Fallback for safety, though RPC should be the primary method for admins
-            const { data: directData, error: directError } = await supabase.from('profiles').select('*');
-            if(directError) {
-                throw new Error(`Failed to fetch users. Please ensure you have admin privileges and RLS policies are correctly set. Error: ${directError.message}`);
-            }
-            return directData as Profile[];
+        // First, try with RPC function for admin users
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_users_admin');
+        
+        if (!rpcError && rpcData) {
+            console.log('Successfully fetched users with RPC:', rpcData.length);
+            return rpcData as Profile[];
         }
-        return data as Profile[];
+
+        console.log('RPC failed or not available, trying direct query:', rpcError);
+        
+        // Fallback: direct query (may be restricted by RLS)
+        const { data: directData, error: directError } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+            
+        if (directError) {
+            console.error('Direct query also failed:', directError);
+            throw new Error(`Unable to fetch users. Please ensure you have admin privileges. Error: ${directError.message}`);
+        }
+        
+        console.log('Successfully fetched users with direct query:', directData.length);
+        return directData as Profile[];
+        
     } catch (error: any) {
         console.error('getAllUsers comprehensive error:', error);
         throw new Error(`Unable to fetch user data: ${error.message}`);
@@ -126,9 +139,13 @@ export const getAllUsers = async (): Promise<Profile[]> => {
 
 export const createUser = async (userData: { email: string; password: string; full_name: string; role: 'student' | 'teacher' }): Promise<any> => {
   try {
-    console.log('Creating user with Supabase Auth Admin API...', { email: userData.email, role: userData.role });
+    console.log('Creating user with Supabase Auth Admin API...', { 
+      email: userData.email, 
+      full_name: userData.full_name,
+      role: userData.role 
+    });
     
-    // Validate input
+    // Validation
     if (!userData.email?.trim()) {
       throw new Error('Email is required');
     }
@@ -168,22 +185,39 @@ export const createUser = async (userData: { email: string; password: string; fu
     console.log('User created successfully:', authData.user.id);
 
     // Wait a bit for the trigger to create the profile
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Update the profile with correct data (in case trigger didn't work properly)
-    const { error: profileError } = await supabase
+    const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .update({ 
+      .upsert({ 
+        id: authData.user.id,
+        email: userData.email.trim(),
         full_name: userData.full_name.trim(), 
         role: userData.role 
+      }, {
+        onConflict: 'id'
       })
-      .eq('id', authData.user.id);
+      .select()
+      .single();
     
     if (profileError) {
-      console.warn(`User created but profile update failed: ${profileError.message}`);
-      // Don't throw here as the user was created successfully
+      console.warn(`User created but profile upsert failed: ${profileError.message}`);
+      // Try a simple update instead
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          full_name: userData.full_name.trim(), 
+          role: userData.role 
+        })
+        .eq('id', authData.user.id);
+      
+      if (updateError) {
+        console.warn(`Profile update also failed: ${updateError.message}`);
+      }
     }
 
+    console.log('Profile data after creation:', profileData);
     return authData.user;
     
   } catch (error: any) {
@@ -208,7 +242,7 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
   try {
     console.log(`Assigning teacher ${teacherId} to student ${studentId}`);
     
-    // Validate inputs
+    // Validation
     if (!teacherId?.trim()) {
       throw new Error('Teacher ID is required');
     }
@@ -219,39 +253,47 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
       throw new Error('A user cannot be assigned to themselves');
     }
 
-    // Verify teacher exists and has teacher role
-    const { data: teacher, error: teacherError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', teacherId)
-      .eq('role', 'teacher')
-      .single();
-
-    if (teacherError) {
-      console.error('Teacher verification error:', teacherError);
-      throw new Error('Selected teacher not found or invalid');
+    // First, get current user to verify admin privileges (optional)
+    const { data: currentUser } = await supabase.auth.getUser();
+    if (!currentUser?.user) {
+      throw new Error('Authentication required');
     }
+
+    // Check if both users exist and have correct roles
+    const { data: users, error: usersError } = await supabase
+      .from('profiles')
+      .select('id, role, full_name, email')
+      .in('id', [teacherId, studentId]);
+
+    if (usersError) {
+      console.error('Error fetching users for validation:', usersError);
+      throw new Error('Unable to validate users');
+    }
+
+    if (!users || users.length !== 2) {
+      throw new Error('One or both users not found');
+    }
+
+    const teacher = users.find(u => u.id === teacherId);
+    const student = users.find(u => u.id === studentId);
 
     if (!teacher) {
-      throw new Error('Selected user is not a valid teacher');
+      throw new Error('Teacher not found');
     }
-
-    // Verify student exists and has student role
-    const { data: student, error: studentError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', studentId)
-      .eq('role', 'student')
-      .single();
-
-    if (studentError) {
-      console.error('Student verification error:', studentError);
-      throw new Error('Selected student not found or invalid');
-    }
-
     if (!student) {
-      throw new Error('Selected user is not a valid student');
+      throw new Error('Student not found');
     }
+    if (teacher.role !== 'teacher') {
+      throw new Error(`Selected user ${teacher.full_name || teacher.email} is not a teacher`);
+    }
+    if (student.role !== 'student') {
+      throw new Error(`Selected user ${student.full_name || student.email} is not a student`);
+    }
+
+    console.log('Users validated:', {
+      teacher: { id: teacher.id, name: teacher.full_name, role: teacher.role },
+      student: { id: student.id, name: student.full_name, role: student.role }
+    });
 
     // Perform the assignment
     const { error: updateError } = await supabase
@@ -260,14 +302,33 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
         teacher_id: teacherId 
       })
       .eq('id', studentId)
-      .eq('role', 'student');
+      .eq('role', 'student'); // Extra safety check
 
     if (updateError) {
       console.error('Assignment update error:', updateError);
+      
+      // Handle specific error cases
+      if (updateError.message?.includes('permission denied') || updateError.message?.includes('RLS')) {
+        throw new Error('Insufficient permissions. Please ensure you are logged in as an admin.');
+      }
+      
       throw new Error(`Failed to assign teacher: ${updateError.message}`);
     }
 
-    console.log('Teacher assignment successful');
+    // Verify the assignment was successful
+    const { data: verifyData, error: verifyError } = await supabase
+      .from('profiles')
+      .select('teacher_id')
+      .eq('id', studentId)
+      .single();
+
+    if (verifyError) {
+      console.warn('Could not verify assignment:', verifyError);
+    } else if (verifyData?.teacher_id !== teacherId) {
+      throw new Error('Assignment may not have been successful');
+    }
+
+    console.log('Teacher assignment successful and verified');
 
   } catch (error: any) {
     console.error('assignTeacherToStudent comprehensive error:', error);
@@ -276,7 +337,7 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
     if (error.message?.includes('not found')) {
       throw new Error('Selected teacher or student not found');
     }
-    if (error.message?.includes('permission')) {
+    if (error.message?.includes('permission') || error.message?.includes('RLS')) {
       throw new Error('Insufficient permissions to assign teacher');
     }
     
