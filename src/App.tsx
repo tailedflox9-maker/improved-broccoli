@@ -1,6 +1,3 @@
-================================================
-FILE: src/App.tsx
-================================================
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
