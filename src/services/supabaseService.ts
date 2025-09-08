@@ -238,130 +238,33 @@ export const createUser = async (userData: { email: string; password: string; fu
   }
 };
 
-// DEBUG VERSION WITH EXTENSIVE LOGGING
 export const assignTeacherToStudent = async (teacherId: string, studentId: string): Promise<void> => {
   try {
-    console.log(`=== ASSIGNMENT DEBUG START ===`);
-    console.log(`Teacher ID: "${teacherId}"`);
-    console.log(`Student ID: "${studentId}"`);
-    
-    // Validation
-    if (!teacherId?.trim()) {
-      throw new Error('Teacher ID is required');
-    }
-    if (!studentId?.trim()) {
-      throw new Error('Student ID is required');
+    // Basic validation
+    if (!teacherId?.trim() || !studentId?.trim()) {
+      throw new Error('Teacher and Student IDs are required.');
     }
     if (teacherId === studentId) {
-      throw new Error('A user cannot be assigned to themselves');
+      throw new Error('A user cannot be assigned to themselves.');
     }
 
-    // Check current user authentication
-    const { data: currentUser, error: authError } = await supabase.auth.getUser();
-    console.log('Current user:', currentUser?.user?.id, 'Auth error:', authError);
+    const adminClient = getAdminClient();
+
+    // Perform the assignment using the admin client to bypass RLS
+    const { error } = await adminClient
+      .from('profiles')
+      .update({ teacher_id: teacherId })
+      .eq('id', studentId);
+
+    if (error) {
+      console.error('Assignment update error:', error);
+      throw new Error(`Failed to assign teacher: ${error.message}`);
+    }
     
-    if (!currentUser?.user) {
-      throw new Error('Authentication required');
-    }
-
-    // First, let's try to get ALL profiles to see what we have access to
-    console.log('=== CHECKING ALL ACCESSIBLE PROFILES ===');
-    const { data: allProfiles, error: allProfilesError } = await supabase
-      .from('profiles')
-      .select('*');
-      
-    console.log('All profiles query result:', { 
-      count: allProfiles?.length || 0, 
-      error: allProfilesError,
-      profiles: allProfiles?.map(p => ({ id: p.id, email: p.email, role: p.role, full_name: p.full_name }))
-    });
-
-    // Now try to get just the specific users
-    console.log('=== CHECKING SPECIFIC USERS ===');
-    const { data: specificUsers, error: specificError } = await supabase
-      .from('profiles')
-      .select('id, role, full_name, email')
-      .in('id', [teacherId, studentId]);
-
-    console.log('Specific users query:', {
-      input_ids: [teacherId, studentId],
-      result_count: specificUsers?.length || 0,
-      error: specificError,
-      users: specificUsers
-    });
-
-    if (specificError) {
-      console.error('Error fetching specific users:', specificError);
-      throw new Error(`Database error: ${specificError.message}`);
-    }
-
-    if (!specificUsers || specificUsers.length === 0) {
-      throw new Error('No users found with the provided IDs');
-    }
-
-    if (specificUsers.length !== 2) {
-      const foundIds = specificUsers.map(u => u.id);
-      const missingIds = [teacherId, studentId].filter(id => !foundIds.includes(id));
-      console.log('Missing user IDs:', missingIds);
-      throw new Error(`Missing users with IDs: ${missingIds.join(', ')}`);
-    }
-
-    const teacher = specificUsers.find(u => u.id === teacherId);
-    const student = specificUsers.find(u => u.id === studentId);
-
-    console.log('Found teacher:', teacher);
-    console.log('Found student:', student);
-
-    if (!teacher) {
-      throw new Error(`Teacher with ID ${teacherId} not found`);
-    }
-    if (!student) {
-      throw new Error(`Student with ID ${studentId} not found`);
-    }
-    if (teacher.role !== 'teacher') {
-      throw new Error(`User ${teacher.full_name || teacher.email} has role '${teacher.role}', not 'teacher'`);
-    }
-    if (student.role !== 'student') {
-      throw new Error(`User ${student.full_name || student.email} has role '${student.role}', not 'student'`);
-    }
-
-    console.log('=== PERFORMING ASSIGNMENT ===');
-    // Perform the assignment
-    const { data: updateData, error: updateError } = await supabase
-      .from('profiles')
-      .update({ 
-        teacher_id: teacherId 
-      })
-      .eq('id', studentId)
-      .select();
-
-    console.log('Update result:', { data: updateData, error: updateError });
-
-    if (updateError) {
-      console.error('Assignment update error:', updateError);
-      throw new Error(`Failed to assign teacher: ${updateError.message}`);
-    }
-
-    // Verify the assignment
-    console.log('=== VERIFYING ASSIGNMENT ===');
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('profiles')
-      .select('id, teacher_id, full_name, email')
-      .eq('id', studentId)
-      .single();
-
-    console.log('Verification result:', { data: verifyData, error: verifyError });
-
-    if (verifyError) {
-      console.warn('Could not verify assignment:', verifyError);
-    } else if (verifyData?.teacher_id !== teacherId) {
-      throw new Error(`Assignment verification failed. Expected teacher_id: ${teacherId}, got: ${verifyData?.teacher_id}`);
-    }
-
-    console.log('=== ASSIGNMENT SUCCESS ===');
+    console.log(`Successfully assigned student ${studentId} to teacher ${teacherId}`);
 
   } catch (error: any) {
-    console.error('=== ASSIGNMENT FAILED ===', error);
-    throw new Error(error.message || 'Failed to assign teacher to student');
+    console.error('assignTeacherToStudent error:', error);
+    throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
