@@ -33,10 +33,10 @@ export function ChatArea({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
 
-  const allMessages = useMemo(() =>
-    streamingMessage ? [...(conversation?.messages || []), streamingMessage] : conversation?.messages || [],
-    [conversation?.messages, streamingMessage]
-  );
+  const allMessages = useMemo(() => {
+    const baseMessages = conversation?.messages || [];
+    return streamingMessage ? [...baseMessages, streamingMessage] : baseMessages;
+  }, [conversation?.messages, streamingMessage]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,9 +48,9 @@ export function ChatArea({
     return () => clearTimeout(timeoutId);
   }, [allMessages.length, streamingMessage?.content, scrollToBottom]);
 
-  // **THE FIX IS HERE:** Show the welcome screen if there is no active conversation OR if the active conversation has no messages.
-  const showWelcomeScreen = !conversation || conversation.messages.length === 0;
-  const canGenerateQuiz = conversation && conversation.messages.length > 2;
+  // Show welcome screen if there is no active conversation OR if the active conversation has no messages
+  const showWelcomeScreen = !conversation || allMessages.length === 0;
+  const canGenerateQuiz = conversation && allMessages.length >= 2;
 
   if (showWelcomeScreen) {
     return (
