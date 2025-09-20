@@ -15,13 +15,7 @@ export interface Conversation {
   created_at: Date;
   updated_at: Date;
   is_pinned?: boolean;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   is_deleted?: boolean; // For soft-deleting conversations
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 }
 
 export interface Message {
@@ -63,6 +57,13 @@ export interface StudySession {
   totalQuestions: number;
   isCompleted: boolean;
   createdAt: Date;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  assignmentId?: string; // To link session to a specific assignment
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export interface QuizQuestion {
@@ -81,6 +82,13 @@ export interface GeneratedQuiz {
   topic: string;
   questions: QuizQuestion[];
   created_at: Date;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  teacher_id: string;
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export interface FlaggedMessage {
@@ -90,6 +98,33 @@ export interface FlaggedMessage {
     student_name: string; // From joined profile
     created_at: string;
 }
+// =================================================================
+// == START OF CHANGES
+// =================================================================
+export interface QuizAssignment {
+  id: string;
+  quiz_id: string;
+  teacher_id: string;
+  student_id: string;
+  assigned_at: string;
+  due_at: string | null;
+  completed_at: string | null;
+  score: number | null;
+  total_questions: number | null;
+}
+
+export interface QuizAssignmentWithDetails extends QuizAssignment {
+  generated_quizzes: {
+    topic: string;
+    questions: QuizQuestion[];
+  };
+  profiles: {
+    full_name: string | null; // Teacher's name
+  };
+}
+// =================================================================
+// == END OF CHANGES
+// =================================================================
 // -------------------
 
 export type Role = 'student' | 'teacher' | 'admin';
@@ -143,6 +178,22 @@ export interface Database {
           Insert: any;
           Update: any;
       }
+      // =================================================================
+      // == START OF CHANGES
+      // =================================================================
+      generated_quizzes: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      quiz_assignments: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      // =================================================================
+      // == END OF CHANGES
+      // =================================================================
     }
     Enums: {
       app_role: "student" | "teacher" | "admin"
