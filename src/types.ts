@@ -11,7 +11,7 @@ export interface Conversation {
   id: string;
   user_id: string;
   title: string;
-  messages: Message[];
+  messages?: Message[]; // <-- UPDATED: Messages are now optional
   created_at: Date;
   updated_at: Date;
   is_pinned?: boolean;
@@ -112,6 +112,11 @@ export interface Database {
         Update: Partial<Profile>;
       }
       conversations: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      messages: { // <-- ADD THIS for type safety if you want
         Row: any;
         Insert: any;
         Update: any;
