@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import * as db from '../services/supabaseService';
-import { Profile } from '../types';
+import { Profile, Conversation, Message } from '../types';
 import { 
   PlusCircle, 
   UserPlus, 
@@ -16,14 +16,20 @@ import {
   Search,
   ChevronDown,
   CheckCircle,
-  XCircle
+  XCircle,
+  ArrowLeft,
+  MessageSquare,
+  Trash2,
+  Eye
 } from 'lucide-react';
+import { formatDate } from '../utils/helpers';
 
 interface AdminPanelProps {
   onClose: () => void;
 }
 
 export function AdminPanelComponent({ onClose }: AdminPanelProps) {
+  // Existing state for user management
   const [users, setUsers] = useState<Profile[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,15 +51,21 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
 
+  // New state for chat history view
+  const [viewMode, setViewMode] = useState<'users' | 'chats'>('users');
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [userConversations, setUserConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+
   const fetchUsers = async () => {
     setLoading(true);
     setError(null);
     try {
       const allUsers = await db.getAllUsers();
-      console.log('Fetched users:', allUsers); // Debug log
       setUsers(allUsers);
     } catch (error: any) {
-      console.error('Error fetching users:', error);
       setError(error.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
@@ -108,16 +120,12 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
 
     setIsCreating(true);
     try {
-      console.log('Creating user with data:', { email, fullName, role }); // Debug log
-      
       const newUser = await db.createUser({ 
         email: email.trim(), 
         password: password.trim(), 
         full_name: fullName.trim(), 
         role 
       });
-      
-      console.log('User created successfully:', newUser); // Debug log
       
       setCreateSuccess(`User "${fullName}" created successfully!`);
       
@@ -127,16 +135,13 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
       setFullName('');
       setRole('student');
       
-      // Refresh users list after a short delay
       setTimeout(async () => {
         await fetchUsers();
       }, 2000);
       
-      // Clear success message after 5 seconds
       setTimeout(() => setCreateSuccess(null), 5000);
       
     } catch (error: any) {
-      console.error('Error creating user:', error);
       setCreateError(`Error creating user: ${error.message}`);
     } finally {
       setIsCreating(false);
@@ -159,8 +164,6 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
 
     setIsAssigning(true);
     try {
-      console.log('Assigning student:', selectedStudent, 'to teacher:', selectedTeacher); // Debug log
-      
       await db.assignTeacherToStudent(selectedTeacher, selectedStudent);
       
       const student = users.find(u => u.id === selectedStudent);
@@ -168,18 +171,14 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
       
       setAssignSuccess(`Student "${student?.full_name || student?.email}" successfully assigned to teacher "${teacher?.full_name || teacher?.email}"!`);
       
-      // Clear selections
       setSelectedStudent('');
       setSelectedTeacher('');
       
-      // Refresh users list
       await fetchUsers();
       
-      // Clear success message after 5 seconds
       setTimeout(() => setAssignSuccess(null), 5000);
       
     } catch (error: any) {
-      console.error('Error assigning student:', error);
       setAssignError(`Error assigning student: ${error.message}`);
     } finally {
       setIsAssigning(false);
@@ -200,6 +199,110 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     }
   };
   
+  const handleViewChats = async (user: Profile) => {
+    setSelectedUser(user);
+    setViewMode('chats');
+    setChatLoading(true);
+    try {
+      const convos = await db.getAllConversationsForUser_Admin(user.id);
+      setUserConversations(convos);
+    } catch (err: any) {
+      setError(`Failed to load chats: ${err.message}`);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleSelectConversation = async (conversation: Conversation) => {
+    setSelectedConversation(conversation);
+    setConversationMessages([]); // Clear previous messages
+    setChatLoading(true);
+    try {
+      const messages = await db.getConversationMessages(conversation.id);
+      setConversationMessages(messages);
+    } catch (err: any) {
+      setError(`Failed to load messages: ${err.message}`);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handlePermanentDelete = async (conversationId: string) => {
+    if (window.confirm('Are you sure you want to permanently delete this conversation? This action cannot be undone.')) {
+      try {
+        await db.permanentDeleteConversation(conversationId);
+        setUserConversations(prev => prev.filter(c => c.id !== conversationId));
+        if (selectedConversation?.id === conversationId) {
+          setSelectedConversation(null);
+          setConversationMessages([]);
+        }
+      } catch (err: any) {
+        alert(`Error: ${err.message}`);
+      }
+    }
+  };
+  
+  const handleBackToUsers = () => {
+    setViewMode('users');
+    setSelectedUser(null);
+    setUserConversations([]);
+    setSelectedConversation(null);
+    setConversationMessages([]);
+    setError(null);
+  };
+
+  if (viewMode === 'chats' && selectedUser) {
+    return (
+      <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-4 mb-4">
+          <button onClick={handleBackToUsers} className="btn-secondary"><ArrowLeft size={16}/> Back to Users</button>
+          <div>
+            <h1 className="text-xl font-bold text-white">Chat History for {selectedUser.full_name || selectedUser.email}</h1>
+            <p className="text-gray-400 text-sm">Viewing all conversations, including those deleted by the user.</p>
+          </div>
+        </div>
+
+        <div className="flex-1 flex gap-6 overflow-hidden">
+          {/* Conversation List */}
+          <div className="w-1/3 flex flex-col bg-black/20 border border-white/10 rounded-xl">
+            <h3 className="card-header text-base">Conversations ({userConversations.length})</h3>
+            <div className="p-2 overflow-y-auto">
+              {chatLoading && !userConversations.length && <p className="text-center text-gray-400 p-4">Loading...</p>}
+              {userConversations.map(convo => (
+                <div key={convo.id} onClick={() => handleSelectConversation(convo)} className={`p-3 rounded-lg cursor-pointer group hover:bg-white/10 ${selectedConversation?.id === convo.id ? 'bg-blue-500/20' : ''}`}>
+                  <div className="flex justify-between items-start">
+                    <p className={`font-semibold truncate pr-2 ${convo.is_deleted ? 'text-red-400 italic' : 'text-white'}`}>{convo.title}</p>
+                    <button onClick={(e) => { e.stopPropagation(); handlePermanentDelete(convo.id); }} className="p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:bg-red-900/40 rounded"><Trash2 size={14}/></button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{formatDate(new Date(convo.updated_at))}</p>
+                  {convo.is_deleted && <span className="text-xs text-red-500 font-bold">(Deleted by user)</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Message View */}
+          <div className="w-2/3 flex flex-col bg-black/20 border border-white/10 rounded-xl">
+            <h3 className="card-header text-base">Messages</h3>
+            <div className="p-4 overflow-y-auto flex-1">
+              {chatLoading && selectedConversation && <p className="text-center text-gray-400 p-4">Loading messages...</p>}
+              {!selectedConversation && <div className="flex items-center justify-center h-full text-gray-500"><p>Select a conversation to view messages</p></div>}
+              <div className="space-y-4">
+                {conversationMessages.map(msg => (
+                  <div key={msg.id} className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-gray-800' : 'bg-gray-700'}`}>
+                    <p className="font-bold text-sm capitalize text-blue-300">{msg.role}</p>
+                    <p className="text-white whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-xs text-gray-500 text-right mt-2">{formatDate(new Date(msg.created_at))}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-grid-slate-900">
       <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -228,85 +331,33 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                 <div className="admin-card">
                     <h3 className="card-header"><UserPlus size={18} /> Create New User</h3>
                     <form onSubmit={handleCreateUser} className="p-6 space-y-4">
-                        {/* Success/Error Messages */}
                         {createSuccess && (
-                          <div className="flex items-center gap-2 p-3 bg-green-900/30 border border-green-500/30 rounded-lg text-green-400">
-                            <CheckCircle size={16} />
-                            <span className="text-sm">{createSuccess}</span>
-                          </div>
+                          <div className="flex items-center gap-2 p-3 bg-green-900/30 border border-green-500/30 rounded-lg text-green-400"><CheckCircle size={16} /><span className="text-sm">{createSuccess}</span></div>
                         )}
                         {createError && (
-                          <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-red-400">
-                            <XCircle size={16} />
-                            <span className="text-sm">{createError}</span>
-                          </div>
+                          <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-red-400"><XCircle size={16} /><span className="text-sm">{createError}</span></div>
                         )}
-                        
                         <div>
                           <label className="input-label">Full Name *</label>
-                          <input 
-                            type="text" 
-                            value={fullName} 
-                            onChange={e => setFullName(e.target.value)} 
-                            placeholder="Enter full name" 
-                            required 
-                            className="input-style"
-                            disabled={isCreating}
-                          />
+                          <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Enter full name" required className="input-style" disabled={isCreating}/>
                         </div>
                         <div>
                           <label className="input-label">Email Address *</label>
-                          <input 
-                            type="email" 
-                            value={email} 
-                            onChange={e => setEmail(e.target.value)} 
-                            placeholder="user@example.com" 
-                            required 
-                            className="input-style"
-                            disabled={isCreating}
-                          />
+                          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@example.com" required className="input-style" disabled={isCreating}/>
                         </div>
                         <div>
                           <label className="input-label">Password *</label>
-                          <input 
-                            type="password" 
-                            value={password} 
-                            onChange={e => setPassword(e.target.value)} 
-                            placeholder="Min. 6 characters" 
-                            required 
-                            className="input-style"
-                            disabled={isCreating}
-                            minLength={6}
-                          />
+                          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" required className="input-style" disabled={isCreating} minLength={6}/>
                         </div>
                         <div>
                           <label className="input-label">Role *</label>
-                          <select 
-                            value={role} 
-                            onChange={e => setRole(e.target.value as any)} 
-                            className="input-style"
-                            disabled={isCreating}
-                          >
+                          <select value={role} onChange={e => setRole(e.target.value as any)} className="input-style" disabled={isCreating}>
                             <option value="student">Student</option>
                             <option value="teacher">Teacher</option>
                           </select>
                         </div>
-                        <button 
-                          type="submit" 
-                          disabled={isCreating || !email.trim() || !password.trim() || !fullName.trim()} 
-                          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isCreating ? (
-                            <>
-                              <RefreshCw size={16} className="animate-spin"/>
-                              Creating...
-                            </>
-                          ) : (
-                            <>
-                              <PlusCircle size={16}/>
-                              Create User
-                            </>
-                          )}
+                        <button type="submit" disabled={isCreating || !email.trim() || !password.trim() || !fullName.trim()} className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+                          {isCreating ? (<><RefreshCw size={16} className="animate-spin"/>Creating...</>) : (<><PlusCircle size={16}/>Create User</>)}
                         </button>
                     </form>
                 </div>
@@ -315,85 +366,32 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                 <div className="admin-card">
                     <h3 className="card-header"><LinkIcon size={18} /> Assign Teacher</h3>
                     <form onSubmit={handleAssignStudent} className="p-6 space-y-4">
-                        {/* Success/Error Messages */}
                         {assignSuccess && (
-                          <div className="flex items-center gap-2 p-3 bg-green-900/30 border border-green-500/30 rounded-lg text-green-400">
-                            <CheckCircle size={16} />
-                            <span className="text-sm">{assignSuccess}</span>
-                          </div>
+                          <div className="flex items-center gap-2 p-3 bg-green-900/30 border border-green-500/30 rounded-lg text-green-400"><CheckCircle size={16} /><span className="text-sm">{assignSuccess}</span></div>
                         )}
                         {assignError && (
-                          <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-red-400">
-                            <XCircle size={16} />
-                            <span className="text-sm">{assignError}</span>
-                          </div>
+                          <div className="flex items-center gap-2 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-red-400"><XCircle size={16} /><span className="text-sm">{assignError}</span></div>
                         )}
-                        
                         <div>
                           <label className="input-label">Select Student *</label>
-                          <select 
-                            value={selectedStudent} 
-                            onChange={e => setSelectedStudent(e.target.value)} 
-                            required 
-                            className="input-style"
-                            disabled={isAssigning}
-                          >
+                          <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)} required className="input-style" disabled={isAssigning}>
                             <option value="">Choose a student...</option>
-                            {students.map(s => (
-                              <option key={s.id} value={s.id}>
-                                {s.full_name || s.email} {s.teacher_id ? '(Already Assigned)' : '(Unassigned)'}
-                              </option>
-                            ))}
+                            {students.map(s => (<option key={s.id} value={s.id}>{s.full_name || s.email} {s.teacher_id ? '(Already Assigned)' : '(Unassigned)'}</option>))}
                           </select>
-                          {students.length === 0 && (
-                            <p className="text-xs text-gray-500 mt-1">No students available</p>
-                          )}
+                          {students.length === 0 && (<p className="text-xs text-gray-500 mt-1">No students available</p>)}
                         </div>
-                        
                         <div>
                           <label className="input-label">Select Teacher *</label>
-                          <select 
-                            value={selectedTeacher} 
-                            onChange={e => setSelectedTeacher(e.target.value)} 
-                            required 
-                            className="input-style"
-                            disabled={isAssigning}
-                          >
+                          <select value={selectedTeacher} onChange={e => setSelectedTeacher(e.target.value)} required className="input-style" disabled={isAssigning}>
                             <option value="">Choose a teacher...</option>
-                            {teachers.map(t => (
-                              <option key={t.id} value={t.id}>
-                                {t.full_name || t.email}
-                              </option>
-                            ))}
+                            {teachers.map(t => (<option key={t.id} value={t.id}>{t.full_name || t.email}</option>))}
                           </select>
-                          {teachers.length === 0 && (
-                            <p className="text-xs text-gray-500 mt-1">No teachers available</p>
-                          )}
+                          {teachers.length === 0 && (<p className="text-xs text-gray-500 mt-1">No teachers available</p>)}
                         </div>
-                        
-                        <button 
-                          type="submit" 
-                          disabled={isAssigning || !selectedStudent || !selectedTeacher || students.length === 0 || teachers.length === 0} 
-                          className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {isAssigning ? (
-                            <>
-                              <RefreshCw size={16} className="animate-spin"/>
-                              Assigning...
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck size={16}/>
-                              Assign Teacher
-                            </>
-                          )}
+                        <button type="submit" disabled={isAssigning || !selectedStudent || !selectedTeacher || students.length === 0 || teachers.length === 0} className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+                          {isAssigning ? (<><RefreshCw size={16} className="animate-spin"/>Assigning...</>) : (<><UserCheck size={16}/>Assign Teacher</>)}
                         </button>
-                        
-                        {unassignedStudents.length > 0 && (
-                          <p className="text-xs text-blue-400">
-                            {unassignedStudents.length} unassigned student{unassignedStudents.length !== 1 ? 's' : ''} available
-                          </p>
-                        )}
+                        {unassignedStudents.length > 0 && (<p className="text-xs text-blue-400">{unassignedStudents.length} unassigned student{unassignedStudents.length !== 1 ? 's' : ''} available</p>)}
                     </form>
                 </div>
             </div>
@@ -403,20 +401,10 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                 <div className="p-4 border-b border-[var(--color-border)] flex flex-col md:flex-row gap-4">
                     <div className="relative flex-1">
                       <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input 
-                        type="text" 
-                        placeholder="Search by name or email..." 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)} 
-                        className="input-style pl-10" 
-                      />
+                      <input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-style pl-10" />
                     </div>
                     <div className="relative">
-                      <select 
-                        value={filterRole} 
-                        onChange={e => setFilterRole(e.target.value)} 
-                        className="input-style pr-8"
-                      >
+                      <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="input-style pr-8">
                         <option value="all">All Roles</option>
                         <option value="admin">Admin</option>
                         <option value="teacher">Teacher</option>
@@ -427,24 +415,10 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                 </div>
                 
                 {loading && (
-                  <div className="text-center p-12">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" />
-                    <p className="text-gray-400 mt-2">Loading users...</p>
-                  </div>
+                  <div className="text-center p-12"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" /><p className="text-gray-400 mt-2">Loading users...</p></div>
                 )}
-                
-                {error && (
-                  <div className="text-center p-12">
-                    <AlertTriangle className="w-8 h-8 mx-auto text-red-500" />
-                    <p className="text-red-400 font-semibold mt-2">Error Loading Data</p>
-                    <p className="text-gray-400 text-sm">{error}</p>
-                    <button 
-                      onClick={fetchUsers}
-                      className="mt-4 btn-secondary"
-                    >
-                      <RefreshCw size={14} /> Try Again
-                    </button>
-                  </div>
+                {error && !chatLoading && (
+                  <div className="text-center p-12"><AlertTriangle className="w-8 h-8 mx-auto text-red-500" /><p className="text-red-400 font-semibold mt-2">Error Loading Data</p><p className="text-gray-400 text-sm">{error}</p><button onClick={fetchUsers} className="mt-4 btn-secondary"><RefreshCw size={14} /> Try Again</button></div>
                 )}
                 
                 {!loading && !error && (
@@ -455,6 +429,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                                 <th className="table-header">User</th>
                                 <th className="table-header">Role</th>
                                 <th className="table-header">Assigned Teacher</th>
+                                <th className="table-header">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--color-border)]">
@@ -465,46 +440,25 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                                         <tr key={user.id} className="hover:bg-white/5">
                                             <td className="p-4">
                                               <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${roleUI.class}`}>
-                                                  {roleUI.icon}
-                                                </div>
-                                                <div>
-                                                  <p className="font-semibold text-white">
-                                                    {user.full_name && user.full_name.trim() ? user.full_name : 'No Name Set'}
-                                                  </p>
-                                                  <p className="text-gray-400">{user.email}</p>
-                                                </div>
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${roleUI.class}`}>{roleUI.icon}</div>
+                                                <div><p className="font-semibold text-white">{user.full_name || 'No Name Set'}</p><p className="text-gray-400">{user.email}</p></div>
                                               </div>
                                             </td>
                                             <td className="p-4">
-                                              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${roleUI.class}`}>
-                                                {roleUI.icon}
-                                                <span>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</span>
-                                              </div>
+                                              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${roleUI.class}`}>{roleUI.icon}<span>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</span></div>
                                             </td>
                                             <td className="p-4 text-gray-300">
-                                              {user.role === 'student' ? (
-                                                assignedTeacher ? (
-                                                  <span className="text-green-400">
-                                                    {assignedTeacher.full_name || assignedTeacher.email}
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-yellow-400 italic">Unassigned</span>
-                                                )
-                                              ) : (
-                                                <span className="text-gray-500">—</span>
-                                              )}
+                                              {user.role === 'student' ? (assignedTeacher ? ( <span className="text-green-400">{assignedTeacher.full_name || assignedTeacher.email}</span>) : ( <span className="text-yellow-400 italic">Unassigned</span>)) : ( <span className="text-gray-500">—</span>)}
+                                            </td>
+                                            <td className="p-4">
+                                              <button onClick={() => handleViewChats(user)} className="btn-secondary"><Eye size={14}/> View Chats</button>
                                             </td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
                         </table>
-                        {filteredUsers.length === 0 && (
-                          <div className="text-center p-12 text-gray-500">
-                            No users match your criteria.
-                          </div>
-                        )}
+                        {filteredUsers.length === 0 && (<div className="text-center p-12 text-gray-500">No users match your criteria.</div>)}
                     </div>
                 )}
             </div>
