@@ -5,10 +5,17 @@ import { StudySession } from '../types';
 interface QuizModalProps {
   isOpen: boolean;
   onClose: () => void;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  onFinish: (score: number, totalQuestions: number) => void;
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
   session: StudySession | null;
 }
 
-export function QuizModal({ isOpen, onClose, session }: QuizModalProps) {
+export function QuizModal({ isOpen, onClose, onFinish, session }: QuizModalProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
@@ -51,6 +58,19 @@ export function QuizModal({ isOpen, onClose, session }: QuizModalProps) {
       return userAnswers[question.id] === correctAnswer ? acc + 1 : acc;
     }, 0);
   }, [quizCompleted, session, userAnswers]);
+  
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  const handleFinish = () => {
+    if (session) {
+      onFinish(score, session.questions.length);
+    }
+    onClose();
+  };
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 
   const scorePercentage = useMemo(() => {
     if (!session || session.questions.length === 0) return 0;
@@ -173,7 +193,7 @@ export function QuizModal({ isOpen, onClose, session }: QuizModalProps) {
         {/* Footer */}
         <div className="flex justify-end p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)]/50 mt-auto">
           {quizCompleted ? (
-            <button onClick={onClose} className="w-full sm:w-auto interactive-button px-6 py-2.5 rounded-lg font-bold bg-[var(--color-accent-bg)] text-[var(--color-accent-text)] hover:bg-[var(--color-accent-bg-hover)]">
+            <button onClick={handleFinish} className="w-full sm:w-auto interactive-button px-6 py-2.5 rounded-lg font-bold bg-[var(--color-accent-bg)] text-[var(--color-accent-text)] hover:bg-[var(--color-accent-bg-hover)]">
               Finish
             </button>
           ) : (
