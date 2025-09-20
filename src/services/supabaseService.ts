@@ -23,6 +23,13 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
     .from('conversations')
     .select('*')
     .eq('user_id', userId)
+    // =================================================================
+    // == START OF CHANGES: Only fetch non-deleted chats for regular users
+    // =================================================================
+    .eq('is_deleted', false)
+    // =================================================================
+    // == END OF CHANGES
+    // =================================================================
     .order('updated_at', { ascending: false });
   if (error) throw error;
   return data.map(conv => ({
@@ -81,10 +88,20 @@ export const updateConversationTimestamp = async (id: string) => {
     if (error) throw error;
 };
 
+// =================================================================
+// == START OF CHANGES: This is now a SOFT DELETE
+// =================================================================
 export const deleteConversation = async (id: string) => {
-  const { error } = await supabase.from('conversations').delete().eq('id', id);
+  // This now sets `is_deleted` to true instead of deleting the row.
+  const { error } = await supabase
+    .from('conversations')
+    .update({ is_deleted: true })
+    .eq('id', id);
   if (error) throw error;
 };
+// =================================================================
+// == END OF CHANGES
+// =================================================================
 
 // --- NOTES ---
 export const getNotes = async (userId: string): Promise<Note[]> => {
@@ -165,6 +182,34 @@ export const getAllUsers = async (): Promise<Profile[]> => {
         throw new Error(`Unable to fetch user data: ${error.message}`);
     }
 };
+
+// =================================================================
+// == START OF CHANGES: New Admin functions for chat history
+// =================================================================
+export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
+  // Fetches ALL conversations for a user, including soft-deleted ones.
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return data.map(conv => ({
+      ...conv,
+      created_at: new Date(conv.created_at),
+      updated_at: new Date(conv.updated_at),
+  })) as Conversation[];
+};
+
+export const permanentDeleteConversation = async (id: string): Promise<void> => {
+  // This is a HARD delete, only for admins.
+  const adminClient = getAdminClient();
+  const { error } = await adminClient.from('conversations').delete().eq('id', id);
+  if (error) throw new Error(`Failed to permanently delete conversation: ${error.message}`);
+};
+// =================================================================
+// == END OF CHANGES
+// =================================================================
 
 export const createUser = async (userData: { email: string; password: string; full_name: string; role: 'student' | 'teacher' }): Promise<any> => {
   try {
