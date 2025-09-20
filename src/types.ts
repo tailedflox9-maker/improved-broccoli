@@ -1,4 +1,5 @@
 // --- Simplified APISettings ---
+// API keys are no longer stored here; they are read from environment variables.
 export interface APISettings {
   selectedModel: 'google' | 'zhipu' | 'mistral-small' | 'mistral-codestral';
 }
@@ -10,11 +11,10 @@ export interface Conversation {
   id: string;
   user_id: string;
   title: string;
-  messages?: Message[];
+  messages?: Message[]; // <-- UPDATED: Messages are now optional
   created_at: Date;
   updated_at: Date;
   is_pinned?: boolean;
-  is_deleted_by_user?: boolean; // <-- ADDED: For soft-delete feature
 }
 
 export interface Message {
@@ -68,6 +68,7 @@ export interface QuizQuestion {
   isCorrect?: boolean;
 }
 
+// --- NEWLY ADDED ---
 export interface GeneratedQuiz {
   id: string;
   topic: string;
@@ -79,9 +80,10 @@ export interface FlaggedMessage {
     id: string;
     message_content: string;
     student_id: string;
-    student_name: string;
+    student_name: string; // From joined profile
     created_at: string;
 }
+// -------------------
 
 export type Role = 'student' | 'teacher' | 'admin';
 
@@ -104,13 +106,39 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      profiles: { Row: Profile; Insert: Omit<Profile, 'id'> & { id: string }; Update: Partial<Profile>; }
-      conversations: { Row: any; Insert: any; Update: any; }
-      messages: { Row: any; Insert: any; Update: any; }
-      notes: { Row: any; Insert: any; Update: any; }
-      quizzes: { Row: any; Insert: any; Update: any; }
-      flagged_messages: { Row: any; Insert: any; Update: any; }
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, 'id'> & { id: string };
+        Update: Partial<Profile>;
+      }
+      conversations: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      messages: { // <-- ADD THIS for type safety if you want
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      notes: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      quizzes: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      }
+      flagged_messages: {
+          Row: any;
+          Insert: any;
+          Update: any;
+      }
     }
-    Enums: { app_role: "student" | "teacher" | "admin" }
+    Enums: {
+      app_role: "student" | "teacher" | "admin"
+    }
   }
 }
