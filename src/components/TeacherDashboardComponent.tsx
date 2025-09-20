@@ -33,7 +33,7 @@ interface StudentWithStats extends Profile {
 }
 
 export function TeacherDashboardComponent() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [students, setStudents] = useState<StudentWithStats[]>([]);
   const [flaggedMessages, setFlaggedMessages] = useState<FlaggedMessage[]>([]);
   const [generatedQuizzes, setGeneratedQuizzes] = useState<GeneratedQuiz[]>([]);
@@ -47,25 +47,28 @@ export function TeacherDashboardComponent() {
   const [quizError, setQuizError] = useState('');
 
   const fetchData = async () => {
-    if (!user?.id) {
+    // Use either user.id or profile.id depending on what's available
+    const userId = user?.id || profile?.id;
+    
+    if (!userId) {
       console.log('No user ID available for fetching teacher data');
       return;
     }
     
-    console.log('Fetching data for teacher:', user.id);
+    console.log('Fetching data for teacher:', userId);
     setLoading(true);
     setError(null);
     
     try {
       // Try to fetch students and flagged messages in parallel
       console.log('Calling getStudentsForTeacher...');
-      const studentsPromise = db.getStudentsForTeacher(user.id).catch(err => {
+      const studentsPromise = db.getStudentsForTeacher(userId).catch(err => {
         console.error('Error fetching students:', err);
         return []; // Return empty array on error
       });
       
       console.log('Calling getFlaggedMessagesForTeacher...');
-      const messagesPromise = db.getFlaggedMessagesForTeacher(user.id).catch(err => {
+      const messagesPromise = db.getFlaggedMessagesForTeacher(userId).catch(err => {
         console.error('Error fetching flagged messages:', err);
         return []; // Return empty array on error
       });
@@ -116,12 +119,13 @@ export function TeacherDashboardComponent() {
 
   // Fixed useEffect with proper dependencies
   useEffect(() => {
-    if (user?.id) {
+    const userId = user?.id || profile?.id;
+    if (userId) {
       fetchData();
     } else {
-      console.log('User not available yet, waiting...');
+      console.log('User/profile not available yet, waiting...');
     }
-  }, [user?.id]); // Only depend on user.id
+  }, [user?.id, profile?.id]); // Depend on both possible ID sources
   
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,7 +174,7 @@ export function TeacherDashboardComponent() {
   );
 
   // Show loading state while user is still loading
-  if (!user) {
+  if (!user && !profile) {
     return (
       <div className="h-full overflow-y-auto bg-grid-slate-900">
         <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -199,7 +203,7 @@ export function TeacherDashboardComponent() {
           {/* Add debug info in development */}
           {process.env.NODE_ENV === 'development' && (
             <p className="text-xs text-gray-500 mt-2">
-              User ID: {user.id} | Students: {students.length} | Messages: {flaggedMessages.length}
+              User ID: {user?.id || profile?.id} | Students: {students.length} | Messages: {flaggedMessages.length}
             </p>
           )}
         </div>
