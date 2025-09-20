@@ -65,9 +65,6 @@ export default function ChatPage() {
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
-  // =================================================================
-  // == START OF MODIFIED SECTION
-  // =================================================================
   const createNewConversation = useCallback(async (title: string): Promise<Conversation> => {
     if (!profile) throw new Error("User profile not available.");
     try {
@@ -89,9 +86,6 @@ export default function ChatPage() {
   const handleNewConversation = useCallback(async () => {
     await createNewConversation('New Chat');
   }, [createNewConversation]);
-  // =================================================================
-  // == END OF MODIFIED SECTION
-  // =================================================================
 
   // Effect to fetch initial conversation list for the user
   useEffect(() => {
@@ -156,9 +150,6 @@ export default function ChatPage() {
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
 
-  // =================================================================
-  // == START OF MODIFIED SECTION
-  // =================================================================
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) {
       console.error("User profile is not loaded yet.");
@@ -197,8 +188,20 @@ export default function ChatPage() {
     setIsChatLoading(true);
     stopStreamingRef.current = false;
     
-    // Save user message to DB and update timestamp
-    db.addMessage({ ...userMessage, model: undefined }).catch(err => console.error("Failed to save user message:", err));
+    // =================================================================
+    // == START OF FIX #2: Correctly save user message to database
+    // =================================================================
+    // The original call was passing temporary fields (`id`, `created_at`) which caused the DB insert to fail silently.
+    // This new object only includes fields that should be saved.
+    db.addMessage({
+      conversation_id: userMessage.conversation_id,
+      user_id: userMessage.user_id,
+      content: userMessage.content,
+      role: userMessage.role,
+    }).catch(err => console.error("Failed to save user message:", err));
+    // =================================================================
+    // == END OF FIX #2
+    // =================================================================
     
     // If it was the first message, update the title in the DB
     const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
@@ -223,7 +226,6 @@ export default function ChatPage() {
       
       setStreamingMessage(assistantMessage);
       
-      // We need to get the latest messages for the API call, including the new user message
       const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
       const messagesForApi = latestMessages.map(m => ({ 
         role: m.role, 
@@ -240,14 +242,23 @@ export default function ChatPage() {
       if (!stopStreamingRef.current && fullResponse.trim()) {
         const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
         
-        // Save assistant message to DB
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
         
-        // Final UI update
-        setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
-          ...c, 
-          messages: [...(c.messages || []), userMessage, finalAssistantMessage],
-        } : c));
+        // =================================================================
+        // == START OF FIX #1: Prevent adding user message twice
+        // =================================================================
+        // The original code re-added `userMessage`, causing duplicates.
+        // Now we only add the `finalAssistantMessage` to the state, which already includes the user's message from the optimistic update.
+        setConversations(prev => prev.map(c => {
+          if (c.id === conversationToUseId) {
+            const existingMessages = c.messages || [];
+            return { ...c, messages: [...existingMessages, finalAssistantMessage] };
+          }
+          return c;
+        }));
+        // =================================================================
+        // == END OF FIX #1
+        // =================================================================
       }
     } catch (error) {
       console.error('Error generating response:', error);
@@ -256,10 +267,21 @@ export default function ChatPage() {
         id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, 
         role: 'assistant', content: errorContent, created_at: new Date() 
       } as Message;
-      setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
-        ...c, 
-        messages: [...(c.messages || []), userMessage, errorMessage]
-      } : c));
+
+      // =================================================================
+      // == START OF FIX #1 (for error case)
+      // =================================================================
+      // Applying the same fix to the error handling block.
+      setConversations(prev => prev.map(c => {
+        if (c.id === conversationToUseId) {
+            const existingMessages = c.messages || [];
+            return { ...c, messages: [...existingMessages, errorMessage] };
+        }
+        return c;
+      }));
+      // =================================================================
+      // == END OF FIX #1 (for error case)
+      // =================================================================
       db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
@@ -267,9 +289,6 @@ export default function ChatPage() {
       stopStreamingRef.current = false;
     }
   }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
-  // =================================================================
-  // == END OF MODIFIED SECTION
-  // =================================================================
 
   const handleGenerateQuiz = useCallback(async () => {
     if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
