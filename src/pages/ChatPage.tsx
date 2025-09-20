@@ -65,21 +65,33 @@ export default function ChatPage() {
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
-  const handleNewConversation = useCallback(async () => {
-    if (!profile) return;
+  // =================================================================
+  // == START OF MODIFIED SECTION
+  // =================================================================
+  const createNewConversation = useCallback(async (title: string): Promise<Conversation> => {
+    if (!profile) throw new Error("User profile not available.");
     try {
-        const newConversation = await db.createConversation(profile.id, 'New Chat');
+        const newConversation = await db.createConversation(profile.id, title);
         setConversations(prev => [newConversation, ...prev]);
         setCurrentConversationId(newConversation.id);
         handleSwitchToChatView();
         if (window.innerWidth < 1024) {
             setSidebarOpen(false);
         }
+        return newConversation;
     } catch (error) {
         console.error("Error creating new conversation:", error);
         alert("Could not create a new conversation. Please try again.");
+        throw error;
     }
   }, [profile, handleSwitchToChatView]);
+
+  const handleNewConversation = useCallback(async () => {
+    await createNewConversation('New Chat');
+  }, [createNewConversation]);
+  // =================================================================
+  // == END OF MODIFIED SECTION
+  // =================================================================
 
   // Effect to fetch initial conversation list for the user
   useEffect(() => {
@@ -144,23 +156,40 @@ export default function ChatPage() {
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
 
+  // =================================================================
+  // == START OF MODIFIED SECTION
+  // =================================================================
   const handleSendMessage = useCallback(async (content: string) => {
-    if (!profile || !currentConversationId) {
-        console.error("Cannot send message without a user profile and selected conversation.");
-        return;
+    if (!profile) {
+      console.error("User profile is not loaded yet.");
+      return;
+    }
+
+    let conversationToUseId = currentConversationId;
+
+    // If there's no active conversation, create one first.
+    if (!conversationToUseId) {
+      try {
+        const newTitle = generateConversationTitle(content);
+        const newConversation = await createNewConversation(newTitle);
+        conversationToUseId = newConversation.id;
+      } catch (err) {
+        console.error("Failed to create a new conversation for the first message:", err);
+        return; // Stop if conversation creation fails
+      }
     }
     
     const userMessage: Message = { 
       id: generateId(), // Temporary ID for UI
-      conversation_id: currentConversationId, 
+      conversation_id: conversationToUseId, 
       user_id: profile.id, 
       content, 
       role: 'user', 
       created_at: new Date() 
     };
     
-    // Optimistic UI update
-    setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+    // Optimistic UI update for user message
+    setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
       ...c,
       messages: [...(c.messages || []), userMessage], 
     } : c));
@@ -170,12 +199,21 @@ export default function ChatPage() {
     
     // Save user message to DB and update timestamp
     db.addMessage({ ...userMessage, model: undefined }).catch(err => console.error("Failed to save user message:", err));
-    db.updateConversationTimestamp(currentConversationId).catch(err => console.error("Failed to update timestamp:", err));
+    
+    // If it was the first message, update the title in the DB
+    const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
+    if (isFirstMessage) {
+        const newTitle = generateConversationTitle(content);
+        setConversations(prev => prev.map(c => c.id === conversationToUseId ? {...c, title: newTitle} : c));
+        db.updateConversationTitle(conversationToUseId, newTitle).catch(err => console.error("Failed to update title:", err));
+    } else {
+        db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
+    }
     
     try {
       const assistantMessage: Message = { 
         id: generateId(), // Temporary ID
-        conversation_id: currentConversationId, 
+        conversation_id: conversationToUseId, 
         user_id: profile.id, 
         content: '', 
         role: 'assistant', 
@@ -185,7 +223,9 @@ export default function ChatPage() {
       
       setStreamingMessage(assistantMessage);
       
-      const messagesForApi = [...(currentConversation?.messages || []), userMessage].map(m => ({ 
+      // We need to get the latest messages for the API call, including the new user message
+      const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
+      const messagesForApi = latestMessages.map(m => ({ 
         role: m.role, 
         content: m.content 
       }));
@@ -204,21 +244,21 @@ export default function ChatPage() {
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
         
         // Final UI update
-        setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+        setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
           ...c, 
-          messages: [...(c.messages || []), finalAssistantMessage],
+          messages: [...(c.messages || []), userMessage, finalAssistantMessage],
         } : c));
       }
     } catch (error) {
       console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
       const errorMessage = { 
-        id: generateId(), conversation_id: currentConversationId, user_id: profile.id, 
+        id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, 
         role: 'assistant', content: errorContent, created_at: new Date() 
       } as Message;
-      setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+      setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
         ...c, 
-        messages: [...(c.messages || []), errorMessage]
+        messages: [...(c.messages || []), userMessage, errorMessage]
       } : c));
       db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
@@ -226,7 +266,10 @@ export default function ChatPage() {
       setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
-  }, [profile, currentConversationId, conversations, settings.selectedModel, currentConversation]);
+  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
+  // =================================================================
+  // == END OF MODIFIED SECTION
+  // =================================================================
 
   const handleGenerateQuiz = useCallback(async () => {
     if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
