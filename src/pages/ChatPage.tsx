@@ -65,6 +65,9 @@ export default function ChatPage() {
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
+  // =================================================================
+  // == START OF MODIFIED SECTION
+  // =================================================================
   const createNewConversation = useCallback(async (title: string): Promise<Conversation> => {
     if (!profile) throw new Error("User profile not available.");
     try {
@@ -72,7 +75,9 @@ export default function ChatPage() {
         setConversations(prev => [newConversation, ...prev]);
         setCurrentConversationId(newConversation.id);
         handleSwitchToChatView();
-        if (window.innerWidth < 1024) { setSidebarOpen(false); }
+        if (window.innerWidth < 1024) {
+            setSidebarOpen(false);
+        }
         return newConversation;
     } catch (error) {
         console.error("Error creating new conversation:", error);
@@ -84,30 +89,49 @@ export default function ChatPage() {
   const handleNewConversation = useCallback(async () => {
     await createNewConversation('New Chat');
   }, [createNewConversation]);
+  // =================================================================
+  // == END OF MODIFIED SECTION
+  // =================================================================
 
+  // Effect to fetch initial conversation list for the user
   useEffect(() => {
     if (!profile || initialized) return;
+    
     const fetchConversations = async () => {
         try {
             const userConversations = await db.getConversations(profile.id);
             setConversations(userConversations);
-            if (userConversations.length > 0) { setCurrentConversationId(userConversations[0].id); } 
-            else { setCurrentConversationId(null); }
-        } catch (err) { console.error("Failed to fetch conversations:", err); } 
-        finally { setInitialized(true); }
+            if (userConversations.length > 0) {
+                setCurrentConversationId(userConversations[0].id);
+            } else {
+                setCurrentConversationId(null);
+            }
+        } catch (err) {
+            console.error("Failed to fetch conversations:", err);
+        } finally {
+            setInitialized(true);
+        }
     };
+    
     fetchConversations();
   }, [profile, initialized]);
 
+  // Effect to fetch messages for the currently selected conversation
   useEffect(() => {
       if (!currentConversationId) return;
+
       const currentConvo = conversations.find(c => c.id === currentConversationId);
+      // Only fetch if messages aren't already loaded
       if (currentConvo && !currentConvo.messages) {
           const fetchMessages = async () => {
               try {
                   const messages = await db.getConversationMessages(currentConversationId);
-                  setConversations(prev => prev.map(c => c.id === currentConversationId ? { ...c, messages } : c));
-              } catch (err) { console.error("Failed to fetch messages:", err); }
+                  setConversations(prev => prev.map(c => 
+                      c.id === currentConversationId ? { ...c, messages } : c
+                  ));
+              } catch (err) {
+                  console.error("Failed to fetch messages:", err);
+              }
           };
           fetchMessages();
       }
@@ -123,29 +147,60 @@ export default function ChatPage() {
   }, []);
   
   const currentConversation = useMemo(() => 
-    conversations.find(c => c.id === currentConversationId), [conversations, currentConversationId]);
+    conversations.find(c => c.id === currentConversationId), 
+    [conversations, currentConversationId]
+  );
 
   const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id);
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
 
+  // =================================================================
+  // == START OF MODIFIED SECTION
+  // =================================================================
   const handleSendMessage = useCallback(async (content: string) => {
-    if (!profile) { console.error("User profile is not loaded yet."); return; }
+    if (!profile) {
+      console.error("User profile is not loaded yet.");
+      return;
+    }
+
     let conversationToUseId = currentConversationId;
+
+    // If there's no active conversation, create one first.
     if (!conversationToUseId) {
       try {
-        const newConversation = await createNewConversation(generateConversationTitle(content));
+        const newTitle = generateConversationTitle(content);
+        const newConversation = await createNewConversation(newTitle);
         conversationToUseId = newConversation.id;
-      } catch (err) { console.error("Failed to create a new conversation:", err); return; }
+      } catch (err) {
+        console.error("Failed to create a new conversation for the first message:", err);
+        return; // Stop if conversation creation fails
+      }
     }
     
-    const userMessage: Message = { id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, content, role: 'user', created_at: new Date() };
+    const userMessage: Message = { 
+      id: generateId(), // Temporary ID for UI
+      conversation_id: conversationToUseId, 
+      user_id: profile.id, 
+      content, 
+      role: 'user', 
+      created_at: new Date() 
+    };
     
-    setConversations(prev => prev.map(c => c.id === conversationToUseId ? { ...c, messages: [...(c.messages || []), userMessage] } : c));
+    // Optimistic UI update for user message
+    setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
+      ...c,
+      messages: [...(c.messages || []), userMessage], 
+    } : c));
+    
     setIsChatLoading(true);
     stopStreamingRef.current = false;
     
+    // Save user message to DB and update timestamp
+    db.addMessage({ ...userMessage, model: undefined }).catch(err => console.error("Failed to save user message:", err));
+    
+    // If it was the first message, update the title in the DB
     const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
     if (isFirstMessage) {
         const newTitle = generateConversationTitle(content);
@@ -155,14 +210,25 @@ export default function ChatPage() {
         db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
     }
     
-    db.addMessage({ ...userMessage, model: undefined }).catch(err => console.error("Failed to save user message:", err));
-    
     try {
-      const assistantMessage = { id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, content: '', role: 'assistant', created_at: new Date(), model: settings.selectedModel };
+      const assistantMessage: Message = { 
+        id: generateId(), // Temporary ID
+        conversation_id: conversationToUseId, 
+        user_id: profile.id, 
+        content: '', 
+        role: 'assistant', 
+        created_at: new Date(), 
+        model: settings.selectedModel 
+      };
+      
       setStreamingMessage(assistantMessage);
       
-      const latestMessages = [...(currentConversation?.messages || []), userMessage];
-      const messagesForApi = latestMessages.map(m => ({ role: m.role, content: m.content }));
+      // We need to get the latest messages for the API call, including the new user message
+      const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
+      const messagesForApi = latestMessages.map(m => ({ 
+        role: m.role, 
+        content: m.content 
+      }));
       
       let fullResponse = '';
       for await (const chunk of aiService.generateStreamingResponse(messagesForApi)) {
@@ -173,54 +239,44 @@ export default function ChatPage() {
       
       if (!stopStreamingRef.current && fullResponse.trim()) {
         const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
-        setConversations(prevConversations => prevConversations.map(conv => {
-            if (conv.id === conversationToUseId) {
-                return { ...conv, messages: [...(conv.messages || []), finalAssistantMessage] };
-            }
-            return conv;
-        }));
+        
+        // Save assistant message to DB
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
+        
+        // Final UI update
+        setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
+          ...c, 
+          messages: [...(c.messages || []), userMessage, finalAssistantMessage],
+        } : c));
       }
     } catch (error) {
       console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      const errorMessage = { id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, role: 'assistant', content: errorContent, created_at: new Date() } as Message;
-      setConversations(prevConversations => prevConversations.map(conv => {
-          if (conv.id === conversationToUseId) {
-              return { ...conv, messages: [...(conv.messages || []), errorMessage] };
-          }
-          return conv;
-      }));
+      const errorMessage = { 
+        id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, 
+        role: 'assistant', content: errorContent, created_at: new Date() 
+      } as Message;
+      setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
+        ...c, 
+        messages: [...(c.messages || []), userMessage, errorMessage]
+      } : c));
       db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
       setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
-  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation, currentConversation]);
-
-  const handleDeleteMessage = useCallback(async (messageId: string) => {
-    if (!currentConversationId) return;
-    const originalConversations = conversations;
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === currentConversationId) {
-        return { ...conv, messages: conv.messages?.filter(m => m.id !== messageId) };
-      }
-      return conv;
-    }));
-    try {
-      await db.deleteMessage(messageId);
-    } catch (error) {
-      console.error("Failed to delete message from database:", error);
-      setConversations(originalConversations);
-      alert("Could not delete the message. Please try again.");
-    }
-  }, [currentConversationId, conversations]);
+  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
+  // =================================================================
+  // == END OF MODIFIED SECTION
+  // =================================================================
 
   const handleGenerateQuiz = useCallback(async () => {
     if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
-      console.warn('Need at least 2 messages to generate quiz'); return;
+      console.warn('Need at least 2 messages to generate quiz');
+      return;
     }
+    
     setIsQuizLoading(true);
     try {
       const quizSession = await aiService.generateQuiz(currentConversation);
@@ -229,24 +285,25 @@ export default function ChatPage() {
     } catch (error) {
       console.error('Error generating quiz:', error);
       alert(`Failed to generate quiz: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally { setIsQuizLoading(false); }
+    } finally {
+      setIsQuizLoading(false);
+    }
   }, [currentConversation]);
 
-  // --- MODIFIED: Calls softDeleteConversation instead of permanent delete ---
   const handleDeleteConversation = useCallback(async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this chat?")) return;
-
     const originalConversations = conversations;
+    
     const remaining = conversations.filter(c => c.id !== id);
     setConversations(remaining);
-    if (currentConversationId === id) { 
-      setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null); 
+    
+    if (currentConversationId === id) {
+        setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
-    try { 
-      await db.softDeleteConversation(id); 
-    } 
-    catch (err) {
-        console.error("Failed to soft delete conversation:", err);
+    
+    try {
+        await db.deleteConversation(id);
+    } catch (err) {
+        console.error("Failed to delete conversation:", err);
         setConversations(originalConversations); // Revert on failure
         alert("Could not delete the conversation.");
     }
@@ -255,8 +312,9 @@ export default function ChatPage() {
   const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
     const originalTitle = conversations.find(c => c.id === id)?.title;
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
-    try { await db.updateConversationTitle(id, newTitle); } 
-    catch (err) {
+    try {
+        await db.updateConversationTitle(id, newTitle);
+    } catch (err) {
         console.error("Failed to rename conversation:", err);
         setConversations(prev => prev.map(c => c.id === id ? { ...c, title: originalTitle || c.title } : c));
         alert("Could not rename the conversation.");
@@ -270,13 +328,27 @@ export default function ChatPage() {
   }
 
   if (loading || (!profile && !error)) { 
-    return <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white"><p>Initializing AI Tutor...</p></div>; 
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
+        <p>Initializing AI Tutor...</p>
+      </div>
+    ); 
   }
+  
   if (error) { 
-    return <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white"><p>Error: {error.message}</p></div>; 
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
+        <p>Error: {error.message}</p>
+      </div>
+    ); 
   }
+  
   if (!initialized) { 
-    return <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white"><p>Loading conversations...</p></div>; 
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
+        <p>Loading conversations...</p>
+      </div>
+    ); 
   }
 
   return (
@@ -284,22 +356,43 @@ export default function ChatPage() {
       {sidebarOpen && window.innerWidth < 1024 && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
+      
       <Sidebar
-        conversations={conversations} notes={[]} activeView={getActiveView()} currentConversationId={currentConversationId}
-        currentNoteId={null} onNewConversation={handleNewConversation} onSelectConversation={handleSelectConversation}
-        onSelectNote={() => {}} onDeleteConversation={handleDeleteConversation} onRenameConversation={handleRenameConversation}
-        onDeleteNote={() => {}} onOpenSettings={() => setSettingsOpen(true)} settings={settings}
-        onModelChange={(model) => setSettings(s => ({ ...s, selectedModel: model }))} onCloseSidebar={() => setSidebarOpen(false)}
-        isFolded={sidebarFolded} onToggleFold={() => setSidebarFolded(!sidebarFolded)} isSidebarOpen={sidebarOpen} userProfile={profile}
-        onToggleAdminPanel={handleToggleAdminPanel} onToggleTeacherDashboard={handleToggleTeacherDashboard}
+        conversations={conversations}
+        notes={[]}
+        activeView={getActiveView()}
+        currentConversationId={currentConversationId}
+        currentNoteId={null}
+        onNewConversation={handleNewConversation}
+        onSelectConversation={handleSelectConversation}
+        onSelectNote={() => {}}
+        onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
+        onDeleteNote={() => {}}
+        onOpenSettings={() => setSettingsOpen(true)}
+        settings={settings}
+        onModelChange={(model) => setSettings(s => ({ ...s, selectedModel: model }))}
+        onCloseSidebar={() => setSidebarOpen(false)}
+        isFolded={sidebarFolded}
+        onToggleFold={() => setSidebarFolded(!sidebarFolded)}
+        isSidebarOpen={sidebarOpen}
+        userProfile={profile}
+        onToggleAdminPanel={handleToggleAdminPanel}
+        onToggleTeacherDashboard={handleToggleTeacherDashboard}
         onSwitchToChatView={handleSwitchToChatView}
       />
+      
       <div className="main-content">
         {!sidebarOpen && (
-          <button onClick={() => setSidebarOpen(true)} className="mobile-menu-button interactive-button p-2 bg-gray-800/80 backdrop-blur-sm rounded-full" title="Open sidebar">
+          <button 
+            onClick={() => setSidebarOpen(true)} 
+            className="mobile-menu-button interactive-button p-2 bg-gray-800/80 backdrop-blur-sm rounded-full" 
+            title="Open sidebar"
+          >
             <Menu className="text-white" />
           </button>
         )}
+        
         {showAdminPanel ? (
           <AdminPanelComponent onClose={handleToggleAdminPanel} />
         ) : showTeacherDashboard ? (
@@ -315,12 +408,25 @@ export default function ChatPage() {
             onStopGenerating={() => { stopStreamingRef.current = true; }}
             onSaveAsNote={() => {}}
             onGenerateQuiz={handleGenerateQuiz}
-            onDeleteMessage={handleDeleteMessage}
           />
         )}
       </div>
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onSaveSettings={setSettings} />
-      <QuizModal isOpen={isQuizModalOpen} onClose={() => { setIsQuizModalOpen(false); setCurrentQuizSession(null); }} session={currentQuizSession} />
+      
+      <SettingsModal 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+        settings={settings} 
+        onSaveSettings={setSettings} 
+      />
+      
+      <QuizModal
+        isOpen={isQuizModalOpen}
+        onClose={() => {
+          setIsQuizModalOpen(false);
+          setCurrentQuizSession(null);
+        }}
+        session={currentQuizSession}
+      />
     </div>
   );
 }
