@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
 
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
@@ -200,6 +200,74 @@ export const createQuiz = async (user_id: string, conversation_id: string, score
   if (error) throw error;
   return data as Quiz;
 };
+
+// =================================================================
+// == START OF CHANGES
+// =================================================================
+export const createGeneratedQuiz = async (quizData: Omit<GeneratedQuiz, 'id' | 'created_at'>): Promise<GeneratedQuiz> => {
+  const { data, error } = await supabase
+    .from('generated_quizzes')
+    .insert({
+      teacher_id: quizData.teacher_id,
+      topic: quizData.topic,
+      questions: quizData.questions,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as GeneratedQuiz;
+};
+
+export const getGeneratedQuizzesForTeacher = async (teacherId: string): Promise<GeneratedQuiz[]> => {
+  const { data, error } = await supabase
+    .from('generated_quizzes')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as GeneratedQuiz[];
+};
+
+export const assignQuizToStudents = async (
+  quizId: string,
+  teacherId: string,
+  studentIds: string[],
+  deadline: string | null
+): Promise<void> => {
+  const assignments = studentIds.map(student_id => ({
+    quiz_id: quizId,
+    teacher_id: teacherId,
+    student_id,
+    due_at: deadline,
+  }));
+  const { error } = await supabase.from('quiz_assignments').insert(assignments);
+  if (error) throw error;
+};
+
+export const getAssignedQuizzesForStudent = async (studentId: string): Promise<QuizAssignmentWithDetails[]> => {
+  const { data, error } = await supabase.rpc('get_student_assignments', { student_id_param: studentId });
+  if (error) {
+    console.error('Error fetching assigned quizzes:', error);
+    throw error;
+  }
+  return data as QuizAssignmentWithDetails[];
+};
+
+export const markQuizAsCompleted = async (assignmentId: string, score: number, totalQuestions: number): Promise<void> => {
+  const { error } = await supabase
+    .from('quiz_assignments')
+    .update({
+      completed_at: new Date().toISOString(),
+      score,
+      total_questions: totalQuestions,
+    })
+    .eq('id', assignmentId);
+  if (error) throw error;
+};
+// =================================================================
+// == END OF CHANGES
+// =================================================================
+
 
 // --- SAFETY ---
 export const flagMessage = async (flaggedMessage: any) => {
