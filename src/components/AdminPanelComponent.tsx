@@ -176,25 +176,36 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   };
 
   const handleSelectConversation = async (conversation: Conversation) => {
+    console.log('Selected conversation:', conversation); // Debug log
+    console.log('Conversation ID:', conversation.id); // Debug log
+    
     setSelectedConversation(conversation);
     setConversationMessages([]);
     setMessageError(null);
     setChatLoading(true);
     
     try {
-      console.log('Loading messages for conversation:', conversation.id); // Debug log
-      const messages = await db.getConversationMessages(conversation.id);
+      // Use admin-specific function instead
+      const messages = await db.getConversationMessages_Admin(conversation.id);
+      console.log('Loaded messages count:', messages?.length || 0); // Debug log
       console.log('Loaded messages:', messages); // Debug log
       
       if (messages && messages.length > 0) {
         setConversationMessages(messages);
+        setMessageError(null);
       } else {
         setConversationMessages([]);
-        setMessageError('No messages found in this conversation.');
+        // Don't set error immediately - let's check if it's actually empty or if there's an issue
+        if (messages && Array.isArray(messages) && messages.length === 0) {
+          setMessageError('This conversation has no messages.');
+        } else {
+          setMessageError('Unable to load messages for this conversation.');
+        }
       }
     } catch (err: any) {
       console.error('Error loading messages:', err); // Debug log
-      setMessageError(`Failed to load messages: ${err.message}`);
+      console.error('Full error object:', err); // More detailed debug log
+      setMessageError(`Failed to load messages: ${err.message || 'Unknown error'}`);
       setConversationMessages([]);
     } finally {
       setChatLoading(false);
