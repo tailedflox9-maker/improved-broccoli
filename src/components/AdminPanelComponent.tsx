@@ -56,6 +56,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -160,6 +161,9 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const handleViewChats = async (user: Profile) => {
     setSelectedUser(user);
     setViewMode('chats');
+    setSelectedConversation(null);
+    setConversationMessages([]);
+    setMessageError(null);
     setChatLoading(true);
     try {
       const convos = await db.getAllConversationsForUser_Admin(user.id);
@@ -174,12 +178,24 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const handleSelectConversation = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
     setConversationMessages([]);
+    setMessageError(null);
     setChatLoading(true);
+    
     try {
+      console.log('Loading messages for conversation:', conversation.id); // Debug log
       const messages = await db.getConversationMessages(conversation.id);
-      setConversationMessages(messages);
+      console.log('Loaded messages:', messages); // Debug log
+      
+      if (messages && messages.length > 0) {
+        setConversationMessages(messages);
+      } else {
+        setConversationMessages([]);
+        setMessageError('No messages found in this conversation.');
+      }
     } catch (err: any) {
-      setError(`Failed to load messages: ${err.message}`);
+      console.error('Error loading messages:', err); // Debug log
+      setMessageError(`Failed to load messages: ${err.message}`);
+      setConversationMessages([]);
     } finally {
       setChatLoading(false);
     }
@@ -193,6 +209,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
         if (selectedConversation?.id === conversationId) {
           setSelectedConversation(null);
           setConversationMessages([]);
+          setMessageError(null);
         }
       } catch (err: any) {
         alert(`Error: ${err.message}`);
@@ -207,6 +224,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     setSelectedConversation(null);
     setConversationMessages([]);
     setError(null);
+    setMessageError(null);
   };
 
   if (viewMode === 'chats' && selectedUser) {
@@ -223,7 +241,15 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
           <div className="w-1/3 flex flex-col bg-black/20 border border-white/10 rounded-xl">
             <h3 className="card-header text-base">Conversations ({userConversations.length})</h3>
             <div className="p-2 overflow-y-auto">
-              {chatLoading && !userConversations.length && <p className="text-center text-gray-400 p-4">Loading...</p>}
+              {chatLoading && !userConversations.length && (
+                <div className="text-center text-gray-400 p-4">
+                  <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2"/>
+                  <p>Loading conversations...</p>
+                </div>
+              )}
+              {!chatLoading && userConversations.length === 0 && (
+                <p className="text-center text-gray-400 p-4">No conversations found</p>
+              )}
               {userConversations.map(convo => (
                 <div key={convo.id} onClick={() => handleSelectConversation(convo)} className={`p-3 rounded-lg cursor-pointer group hover:bg-white/10 ${selectedConversation?.id === convo.id ? 'bg-blue-500/20' : ''}`}>
                   <div className="flex justify-between items-start">
@@ -239,17 +265,42 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
           <div className="w-2/3 flex flex-col bg-black/20 border border-white/10 rounded-xl">
             <h3 className="card-header text-base">Messages</h3>
             <div className="p-4 overflow-y-auto flex-1">
-              {chatLoading && selectedConversation && <div className="text-center text-gray-400 p-4"><RefreshCw className="w-5 h-5 animate-spin mx-auto"/></div>}
-              {!selectedConversation && <div className="flex items-center justify-center h-full text-gray-500"><p>Select a conversation to view messages</p></div>}
-              <div className="space-y-4">
-                {conversationMessages.map(msg => (
-                  <div key={msg.id} className={`p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-gray-800' : 'bg-gray-700'}`}>
-                    <p className={`font-bold capitalize ${msg.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>{msg.role}</p>
-                    <p className="text-white whitespace-pre-wrap mt-1">{msg.content}</p>
-                    <p className="text-xs text-gray-500 text-right mt-2">{formatDate(new Date(msg.created_at))}</p>
+              {chatLoading && selectedConversation && (
+                <div className="text-center text-gray-400 p-4">
+                  <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2"/>
+                  <p>Loading messages...</p>
+                </div>
+              )}
+              {!selectedConversation && !chatLoading && (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p>Select a conversation to view messages</p>
+                </div>
+              )}
+              {messageError && (
+                <div className="flex items-center justify-center h-full text-red-400">
+                  <div className="text-center">
+                    <AlertTriangle className="w-8 h-8 mx-auto mb-2"/>
+                    <p>{messageError}</p>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+              {!chatLoading && selectedConversation && !messageError && (
+                <div className="space-y-4">
+                  {conversationMessages.length === 0 ? (
+                    <div className="text-center text-gray-500 p-4">
+                      <p>This conversation has no messages</p>
+                    </div>
+                  ) : (
+                    conversationMessages.map(msg => (
+                      <div key={msg.id} className={`p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-gray-800' : 'bg-gray-700'}`}>
+                        <p className={`font-bold capitalize ${msg.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>{msg.role}</p>
+                        <p className="text-white whitespace-pre-wrap mt-1">{msg.content}</p>
+                        <p className="text-xs text-gray-500 text-right mt-2">{formatDate(new Date(msg.created_at))}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
