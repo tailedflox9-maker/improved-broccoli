@@ -15,6 +15,13 @@ export interface Conversation {
   created_at: Date;
   updated_at: Date;
   is_pinned?: boolean;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  is_deleted?: boolean; // For soft-deleting conversations
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export interface Message {
