@@ -67,7 +67,7 @@ export function TeacherDashboardComponent() {
     setError(null);
     
     try {
-      // Try to fetch students and flagged messages in parallel
+      // Try to fetch students, flagged messages, and generated quizzes in parallel
       console.log('Calling getStudentsForTeacher...');
       const studentsPromise = db.getStudentsForTeacher(userId).catch(err => {
         console.error('Error fetching students:', err);
@@ -80,13 +80,21 @@ export function TeacherDashboardComponent() {
         return []; // Return empty array on error
       });
 
-      const [assignedStudents, messages] = await Promise.all([
+      console.log('Calling getGeneratedQuizzesForTeacher...');
+      const quizzesPromise = db.getGeneratedQuizzesForTeacher(userId).catch(err => {
+        console.error('Error fetching generated quizzes:', err);
+        return []; // Return empty array on error
+      });
+
+      const [assignedStudents, messages, quizzes] = await Promise.all([
         studentsPromise,
-        messagesPromise
+        messagesPromise,
+        quizzesPromise
       ]);
 
       console.log('Assigned students:', assignedStudents);
       console.log('Flagged messages:', messages);
+      console.log('Generated quizzes:', quizzes);
 
       // Fetch stats for each student
       const studentsWithStats = await Promise.all(
@@ -115,6 +123,7 @@ export function TeacherDashboardComponent() {
       
       setStudents(studentsWithStats);
       setFlaggedMessages(messages);
+      setGeneratedQuizzes(quizzes);
       
     } catch (error: any) {
       console.error('Error in fetchData:', error);
@@ -145,11 +154,12 @@ export function TeacherDashboardComponent() {
     setQuizError('');
     
     try {
-      // Remove the teacherId parameter - it's now handled inside the aiService
+      // Generate quiz using aiService (teacherId is handled internally)
       const newQuiz = await aiService.generateQuizFromTopic(quizTopic);
       setGeneratedQuizzes(prev => [newQuiz, ...prev]);
       setIsQuizModalOpen(false);
       setQuizTopic('');
+      setQuizError('');
     } catch (error: any) {
       console.error('Quiz generation error:', error);
       setQuizError(error.message || "An unknown error occurred.");
@@ -171,14 +181,22 @@ export function TeacherDashboardComponent() {
       return;
     }
 
+    if (!user?.id && !profile?.id) {
+      alert('Unable to identify teacher. Please try logging in again.');
+      return;
+    }
+
+    const teacherId = user?.id || profile?.id!;
+    
     setIsAssigning(true);
     try {
-      // For now, we'll just show a success message
-      // In a real app, you'd save this to a database table like 'quiz_assignments'
-      console.log('Assigning quiz:', selectedQuiz.topic, 'to students:', selectedStudents);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Actually assign the quiz to students using the database function
+      await db.assignQuizToStudents(
+        selectedQuiz.id,
+        teacherId,
+        selectedStudents,
+        assignmentDeadline || null
+      );
       
       alert(`Successfully assigned "${selectedQuiz.topic}" to ${selectedStudents.length} student(s)!`);
       setIsAssignModalOpen(false);
@@ -187,7 +205,7 @@ export function TeacherDashboardComponent() {
       setAssignmentDeadline('');
     } catch (error: any) {
       console.error('Assignment error:', error);
-      alert('Failed to assign quiz. Please try again.');
+      alert(`Failed to assign quiz: ${error.message}`);
     } finally {
       setIsAssigning(false);
     }
@@ -254,7 +272,7 @@ export function TeacherDashboardComponent() {
           {/* Add debug info in development */}
           {process.env.NODE_ENV === 'development' && (
             <p className="text-xs text-gray-500 mt-2">
-              User ID: {user?.id || profile?.id} | Students: {students.length} | Messages: {flaggedMessages.length}
+              User ID: {user?.id || profile?.id} | Students: {students.length} | Messages: {flaggedMessages.length} | Quizzes: {generatedQuizzes.length}
             </p>
           )}
         </div>
@@ -305,7 +323,7 @@ export function TeacherDashboardComponent() {
 
             {/* Generated Quizzes */}
             <div className="admin-card">
-              <h3 className="card-header">Generated Quizzes</h3>
+              <h3 className="card-header">Generated Quizzes ({generatedQuizzes.length})</h3>
               <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
                 {generatedQuizzes.length > 0 ? (
                   generatedQuizzes.map(quiz => (
@@ -313,10 +331,13 @@ export function TeacherDashboardComponent() {
                       <div>
                         <p className="font-semibold text-white">{quiz.topic}</p>
                         <p className="text-xs text-gray-400">{quiz.questions.length} Questions</p>
+                        <p className="text-xs text-gray-500">Created: {formatDate(new Date(quiz.created_at))}</p>
                       </div>
                       <button 
                         onClick={() => handleAssignQuiz(quiz)}
                         className="btn-secondary"
+                        disabled={students.length === 0}
+                        title={students.length === 0 ? "No students assigned to you" : "Assign quiz to students"}
                       >
                         <Share2 size={14}/> Assign
                       </button>
@@ -324,7 +345,7 @@ export function TeacherDashboardComponent() {
                   ))
                 ) : (
                   <p className="text-sm text-gray-500 text-center py-4">
-                    No quizzes generated yet.
+                    No quizzes generated yet. Click "Generate New Quiz" to create one.
                   </p>
                 )}
               </div>
@@ -540,33 +561,42 @@ export function TeacherDashboardComponent() {
             {/* Students Selection */}
             <div>
               <label className="input-label mb-3">Select Students ({selectedStudents.length} selected)</label>
-              <div className="space-y-2 max-h-48 overflow-y-auto border border-[var(--color-border)] rounded-lg p-3 bg-gray-900/20">
-                <button
-                  onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))}
-                  className="text-sm text-blue-400 hover:text-blue-300 mb-2"
-                >
-                  {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
-                </button>
-                {students.map(student => (
-                  <label key={student.id} className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedStudents.includes(student.id)}
-                      onChange={() => toggleStudentSelection(student.id)}
-                      className="rounded border-gray-600 text-blue-500 focus:ring-blue-500 focus:ring-2"
-                    />
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 bg-green-900/40 rounded-full flex items-center justify-center">
-                        <User className="w-3 h-3 text-green-400" />
+              {students.length === 0 ? (
+                <div className="text-center p-8 border border-[var(--color-border)] rounded-lg bg-gray-900/20">
+                  <Users size={32} className="mx-auto text-gray-600 mb-2" />
+                  <p className="text-gray-400">No students assigned to you</p>
+                  <p className="text-xs text-gray-500 mt-1">Contact an admin to assign students</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto border border-[var(--color-border)] rounded-lg p-3 bg-gray-900/20">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))}
+                    className="text-sm text-blue-400 hover:text-blue-300 mb-2"
+                  >
+                    {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  {students.map(student => (
+                    <label key={student.id} className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudents.includes(student.id)}
+                        onChange={() => toggleStudentSelection(student.id)}
+                        className="rounded border-gray-600 text-blue-500 focus:ring-blue-500 focus:ring-2"
+                      />
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-green-900/40 rounded-full flex items-center justify-center">
+                          <User className="w-3 h-3 text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">{student.full_name}</p>
+                          <p className="text-gray-400 text-xs">{student.email}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">{student.full_name}</p>
-                        <p className="text-gray-400 text-xs">{student.email}</p>
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Deadline */}
@@ -588,7 +618,7 @@ export function TeacherDashboardComponent() {
               <label className="input-label mb-2">Quiz Preview</label>
               <div className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-3 text-sm">
                 <p className="text-white font-medium">{selectedQuiz.questions.length} Questions</p>
-                <p className="text-gray-400 mt-1">Topics: {selectedQuiz.topic}</p>
+                <p className="text-gray-400 mt-1">Topic: {selectedQuiz.topic}</p>
                 <div className="mt-2 space-y-1 text-xs text-gray-500">
                   {selectedQuiz.questions.slice(0, 2).map((q, idx) => (
                     <p key={idx}>• {q.question.substring(0, 80)}...</p>
