@@ -134,7 +134,6 @@ export function TeacherDashboardComponent() {
     }
   }, [user?.id, profile?.id]); // Depend on both possible ID sources
   
-  
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quizTopic.trim()) {
@@ -146,6 +145,7 @@ export function TeacherDashboardComponent() {
     setQuizError('');
     
     try {
+      // Remove the teacherId parameter - it's now handled inside the aiService
       const newQuiz = await aiService.generateQuizFromTopic(quizTopic);
       setGeneratedQuizzes(prev => [newQuiz, ...prev]);
       setIsQuizModalOpen(false);
