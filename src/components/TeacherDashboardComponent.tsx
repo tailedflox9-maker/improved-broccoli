@@ -45,6 +45,13 @@ export function TeacherDashboardComponent() {
   const [quizTopic, setQuizTopic] = useState('');
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [quizError, setQuizError] = useState('');
+  
+  // Assignment Modal State
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedQuiz, setSelectedQuiz] = useState<GeneratedQuiz | null>(null);
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [assignmentDeadline, setAssignmentDeadline] = useState('');
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const fetchData = async () => {
     // Use either user.id or profile.id depending on what's available
@@ -127,6 +134,7 @@ export function TeacherDashboardComponent() {
     }
   }, [user?.id, profile?.id]); // Depend on both possible ID sources
   
+  
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quizTopic.trim()) {
@@ -149,6 +157,49 @@ export function TeacherDashboardComponent() {
       setIsGeneratingQuiz(false);
     }
   }
+
+  const handleAssignQuiz = (quiz: GeneratedQuiz) => {
+    setSelectedQuiz(quiz);
+    setSelectedStudents([]);
+    setAssignmentDeadline('');
+    setIsAssignModalOpen(true);
+  };
+
+  const handleConfirmAssignment = async () => {
+    if (!selectedQuiz || selectedStudents.length === 0) {
+      alert('Please select at least one student to assign the quiz to.');
+      return;
+    }
+
+    setIsAssigning(true);
+    try {
+      // For now, we'll just show a success message
+      // In a real app, you'd save this to a database table like 'quiz_assignments'
+      console.log('Assigning quiz:', selectedQuiz.topic, 'to students:', selectedStudents);
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      alert(`Successfully assigned "${selectedQuiz.topic}" to ${selectedStudents.length} student(s)!`);
+      setIsAssignModalOpen(false);
+      setSelectedQuiz(null);
+      setSelectedStudents([]);
+      setAssignmentDeadline('');
+    } catch (error: any) {
+      console.error('Assignment error:', error);
+      alert('Failed to assign quiz. Please try again.');
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const toggleStudentSelection = (studentId: string) => {
+    setSelectedStudents(prev => 
+      prev.includes(studentId)
+        ? prev.filter(id => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
 
   const totals = useMemo(() => ({
     questions: students.reduce((acc, s) => acc + s.stats.questionCount, 0),
@@ -263,7 +314,10 @@ export function TeacherDashboardComponent() {
                         <p className="font-semibold text-white">{quiz.topic}</p>
                         <p className="text-xs text-gray-400">{quiz.questions.length} Questions</p>
                       </div>
-                      <button className="btn-secondary">
+                      <button 
+                        onClick={() => handleAssignQuiz(quiz)}
+                        className="btn-secondary"
+                      >
                         <Share2 size={14}/> Assign
                       </button>
                     </div>
@@ -456,6 +510,117 @@ export function TeacherDashboardComponent() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    )}
+
+    {/* Quiz Assignment Modal */}
+    {isAssignModalOpen && selectedQuiz && (
+      <div 
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
+        onClick={() => setIsAssignModalOpen(false)}
+      >
+        <div 
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" 
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Share2 size={20}/> Assign Quiz: {selectedQuiz.topic}
+            </h2>
+            <button 
+              onClick={() => setIsAssignModalOpen(false)} 
+              className="p-2 hover:bg-[var(--color-border)] rounded-lg"
+            >
+              <X size={18}/>
+            </button>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            {/* Students Selection */}
+            <div>
+              <label className="input-label mb-3">Select Students ({selectedStudents.length} selected)</label>
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-[var(--color-border)] rounded-lg p-3 bg-gray-900/20">
+                <button
+                  onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))}
+                  className="text-sm text-blue-400 hover:text-blue-300 mb-2"
+                >
+                  {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
+                </button>
+                {students.map(student => (
+                  <label key={student.id} className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedStudents.includes(student.id)}
+                      onChange={() => toggleStudentSelection(student.id)}
+                      className="rounded border-gray-600 text-blue-500 focus:ring-blue-500 focus:ring-2"
+                    />
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 bg-green-900/40 rounded-full flex items-center justify-center">
+                        <User className="w-3 h-3 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-white text-sm font-medium">{student.full_name}</p>
+                        <p className="text-gray-400 text-xs">{student.email}</p>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Deadline */}
+            <div>
+              <label className="input-label">Assignment Deadline (Optional)</label>
+              <input 
+                type="datetime-local" 
+                value={assignmentDeadline} 
+                onChange={e => setAssignmentDeadline(e.target.value)} 
+                className="input-style"
+              />
+              <p className="text-xs text-gray-500 mt-1.5">
+                Students will receive a notification about the deadline.
+              </p>
+            </div>
+
+            {/* Quiz Preview */}
+            <div>
+              <label className="input-label mb-2">Quiz Preview</label>
+              <div className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-3 text-sm">
+                <p className="text-white font-medium">{selectedQuiz.questions.length} Questions</p>
+                <p className="text-gray-400 mt-1">Topics: {selectedQuiz.topic}</p>
+                <div className="mt-2 space-y-1 text-xs text-gray-500">
+                  {selectedQuiz.questions.slice(0, 2).map((q, idx) => (
+                    <p key={idx}>• {q.question.substring(0, 80)}...</p>
+                  ))}
+                  {selectedQuiz.questions.length > 2 && <p>• And {selectedQuiz.questions.length - 2} more questions...</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-between">
+            <button 
+              onClick={() => setIsAssignModalOpen(false)}
+              className="btn-secondary px-6 py-2"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleConfirmAssignment}
+              disabled={isAssigning || selectedStudents.length === 0} 
+              className="btn-primary px-6 py-2"
+            >
+              {isAssigning ? (
+                <>
+                  <Loader2 size={16} className="animate-spin mr-2"/>
+                  Assigning...
+                </>
+              ) : (
+                `Assign to ${selectedStudents.length} Student${selectedStudents.length !== 1 ? 's' : ''}`
+              )}
+            </button>
+          </div>
         </div>
       </div>
     )}
