@@ -5,7 +5,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { QuizModal } from '../components/QuizModal';
 import { AdminPanelComponent } from '../components/AdminPanelComponent';
 import { TeacherDashboardComponent } from '../components/TeacherDashboardComponent';
-import { Conversation, Message, APISettings, Note, StudySession } from '../types';
+import { Conversation, Message, APISettings, Note, StudySession, QuizAssignmentWithDetails } from '../types';
 import { generateId, generateConversationTitle } from '../utils/helpers';
 import { Menu } from 'lucide-react';
 import { storageUtils } from '../utils/storage';
@@ -17,6 +17,13 @@ export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  const [assignedQuizzes, setAssignedQuizzes] = useState<QuizAssignmentWithDetails[]>([]);
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
   const [settings, setSettings] = useState<APISettings>(() => storageUtils.getSettings());
   const [initialized, setInitialized] = useState(false);
   
@@ -87,11 +94,11 @@ export default function ChatPage() {
     await createNewConversation('New Chat');
   }, [createNewConversation]);
 
-  // Effect to fetch initial conversation list for the user
+  // Effect to fetch initial data for the user
   useEffect(() => {
     if (!profile || initialized) return;
     
-    const fetchConversations = async () => {
+    const fetchInitialData = async () => {
         try {
             const userConversations = await db.getConversations(profile.id);
             setConversations(userConversations);
@@ -100,14 +107,19 @@ export default function ChatPage() {
             } else {
                 setCurrentConversationId(null);
             }
+
+            if (profile.role === 'student') {
+                const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
+                setAssignedQuizzes(quizzes);
+            }
         } catch (err) {
-            console.error("Failed to fetch conversations:", err);
+            console.error("Failed to fetch initial data:", err);
         } finally {
             setInitialized(true);
         }
     };
     
-    fetchConversations();
+    fetchInitialData();
   }, [profile, initialized]);
 
   // Effect to fetch messages for the currently selected conversation
@@ -115,7 +127,6 @@ export default function ChatPage() {
       if (!currentConversationId) return;
 
       const currentConvo = conversations.find(c => c.id === currentConversationId);
-      // Only fetch if messages aren't already loaded
       if (currentConvo && !currentConvo.messages) {
           const fetchMessages = async () => {
               try {
@@ -149,6 +160,50 @@ export default function ChatPage() {
     setCurrentConversationId(id);
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
+  
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  const handleSelectAssignedQuiz = useCallback((assignment: QuizAssignmentWithDetails) => {
+    if (assignment.completed_at) {
+        alert(`You have already completed this quiz. Your score was ${assignment.score}/${assignment.total_questions}.`);
+        return;
+    }
+    const session: StudySession = {
+      id: generateId(),
+      conversationId: '', // Not from a conversation
+      questions: assignment.generated_quizzes.questions,
+      currentQuestionIndex: 0,
+      score: 0,
+      totalQuestions: assignment.generated_quizzes.questions.length,
+      isCompleted: false,
+      createdAt: new Date(),
+      assignmentId: assignment.id,
+    };
+    setCurrentQuizSession(session);
+    setIsQuizModalOpen(true);
+  }, []);
+  
+  const handleFinishQuiz = useCallback(async (score: number, totalQuestions: number) => {
+    if (currentQuizSession?.assignmentId) {
+        try {
+            await db.markQuizAsCompleted(currentQuizSession.assignmentId, score, totalQuestions);
+            // Refetch quizzes to update status
+            if (profile) {
+                const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
+                setAssignedQuizzes(quizzes);
+            }
+        } catch (err) {
+            console.error("Failed to mark quiz as completed:", err);
+            alert("There was an error saving your quiz result.");
+        }
+    }
+    setCurrentQuizSession(null);
+    setIsQuizModalOpen(false);
+  }, [currentQuizSession, profile]);
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) {
@@ -158,7 +213,6 @@ export default function ChatPage() {
 
     let conversationToUseId = currentConversationId;
 
-    // If there's no active conversation, create one first.
     if (!conversationToUseId) {
       try {
         const newTitle = generateConversationTitle(content);
@@ -166,12 +220,12 @@ export default function ChatPage() {
         conversationToUseId = newConversation.id;
       } catch (err) {
         console.error("Failed to create a new conversation for the first message:", err);
-        return; // Stop if conversation creation fails
+        return;
       }
     }
     
     const userMessage: Message = { 
-      id: generateId(), // Temporary ID for UI
+      id: generateId(), 
       conversation_id: conversationToUseId, 
       user_id: profile.id, 
       content, 
@@ -179,7 +233,6 @@ export default function ChatPage() {
       created_at: new Date() 
     };
     
-    // Optimistic UI update for user message
     setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
       ...c,
       messages: [...(c.messages || []), userMessage], 
@@ -188,22 +241,13 @@ export default function ChatPage() {
     setIsChatLoading(true);
     stopStreamingRef.current = false;
     
-    // =================================================================
-    // == START OF FIX #2: Correctly save user message to database
-    // =================================================================
-    // The original call was passing temporary fields (`id`, `created_at`) which caused the DB insert to fail silently.
-    // This new object only includes fields that should be saved.
     db.addMessage({
       conversation_id: userMessage.conversation_id,
       user_id: userMessage.user_id,
       content: userMessage.content,
       role: userMessage.role,
     }).catch(err => console.error("Failed to save user message:", err));
-    // =================================================================
-    // == END OF FIX #2
-    // =================================================================
     
-    // If it was the first message, update the title in the DB
     const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
     if (isFirstMessage) {
         const newTitle = generateConversationTitle(content);
@@ -215,7 +259,7 @@ export default function ChatPage() {
     
     try {
       const assistantMessage: Message = { 
-        id: generateId(), // Temporary ID
+        id: generateId(), 
         conversation_id: conversationToUseId, 
         user_id: profile.id, 
         content: '', 
@@ -244,11 +288,6 @@ export default function ChatPage() {
         
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
         
-        // =================================================================
-        // == START OF FIX #1: Prevent adding user message twice
-        // =================================================================
-        // The original code re-added `userMessage`, causing duplicates.
-        // Now we only add the `finalAssistantMessage` to the state, which already includes the user's message from the optimistic update.
         setConversations(prev => prev.map(c => {
           if (c.id === conversationToUseId) {
             const existingMessages = c.messages || [];
@@ -256,9 +295,6 @@ export default function ChatPage() {
           }
           return c;
         }));
-        // =================================================================
-        // == END OF FIX #1
-        // =================================================================
       }
     } catch (error) {
       console.error('Error generating response:', error);
@@ -268,10 +304,6 @@ export default function ChatPage() {
         role: 'assistant', content: errorContent, created_at: new Date() 
       } as Message;
 
-      // =================================================================
-      // == START OF FIX #1 (for error case)
-      // =================================================================
-      // Applying the same fix to the error handling block.
       setConversations(prev => prev.map(c => {
         if (c.id === conversationToUseId) {
             const existingMessages = c.messages || [];
@@ -279,9 +311,6 @@ export default function ChatPage() {
         }
         return c;
       }));
-      // =================================================================
-      // == END OF FIX #1 (for error case)
-      // =================================================================
       db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
@@ -365,7 +394,7 @@ export default function ChatPage() {
   if (!initialized) { 
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
-        <p>Loading conversations...</p>
+        <p>Loading your learning space...</p>
       </div>
     ); 
   }
@@ -379,12 +408,14 @@ export default function ChatPage() {
       <Sidebar
         conversations={conversations}
         notes={[]}
+        assignedQuizzes={assignedQuizzes}
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
         currentNoteId={null}
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
         onSelectNote={() => {}}
+        onSelectAssignedQuiz={handleSelectAssignedQuiz}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
         onDeleteNote={() => {}}
@@ -444,6 +475,7 @@ export default function ChatPage() {
           setIsQuizModalOpen(false);
           setCurrentQuizSession(null);
         }}
+        onFinish={handleFinishQuiz}
         session={currentQuizSession}
       />
     </div>
