@@ -1,5 +1,6 @@
 import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz } from '../types';
 import { generateId } from '../utils/helpers';
+import * as db from './supabaseService';
 
 // **FIX**: API keys are now read directly from environment variables.
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
@@ -159,7 +160,10 @@ class AiService {
     return { id: generateId(), conversationId: conversation.id, questions, currentQuestionIndex: 0, score: 0, totalQuestions: questions.length, isCompleted: false, createdAt: new Date() };
   }
 
-  public async generateQuizFromTopic(topic: string): Promise<GeneratedQuiz> {
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  public async generateQuizFromTopic(topic: string, teacherId: string): Promise<GeneratedQuiz> {
     if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
     const prompt = `You are an expert educator. Create a high-quality, multiple-choice quiz with 5 questions about the following topic: "${topic}". The questions should be challenging but fair for a high-school level student. Format the output as a single JSON object with a "questions" array. Each question object in the array must include: "question" (string), "options" (an array of exactly 4 strings), "answer" (the correct string from the options array), and a brief "explanation" (string) for the correct answer. Return ONLY the valid JSON object.`;
 
@@ -178,8 +182,16 @@ class AiService {
     if (!textResponse) throw new Error('Invalid API response when generating quiz from topic.');
     
     const questions = await this.parseQuizResponse(textResponse);
-    return { id: generateId(), topic, questions, created_at: new Date() };
+
+    // Save the generated quiz to the database
+    const newQuizData = { teacher_id: teacherId, topic, questions };
+    const savedQuiz = await db.createGeneratedQuiz(newQuizData);
+
+    return savedQuiz;
   }
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export const aiService = new AiService();
