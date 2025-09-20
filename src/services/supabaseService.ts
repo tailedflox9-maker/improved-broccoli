@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message } from '../types';
 
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
@@ -17,7 +17,7 @@ export const getProfile = async (): Promise<Profile> => {
   return data[0] as Profile;
 };
 
-// --- CONVERSATIONS ---
+// --- CONVERSATIONS & MESSAGES (DATABASE-DRIVEN) ---
 export const getConversations = async (userId: string): Promise<Conversation[]> => {
   const { data, error } = await supabase
     .from('conversations')
@@ -27,10 +27,22 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
   if (error) throw error;
   return data.map(conv => ({
       ...conv,
-      messages: [],
       created_at: new Date(conv.created_at),
       updated_at: new Date(conv.updated_at),
   })) as Conversation[];
+};
+
+export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
+    const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data.map(msg => ({
+        ...msg,
+        created_at: new Date(msg.created_at)
+    })) as Message[];
 };
 
 export const createConversation = async (userId: string, title: string): Promise<Conversation> => {
@@ -40,12 +52,33 @@ export const createConversation = async (userId: string, title: string): Promise
     .select()
     .single();
   if (error) throw error;
-  return { ...data, created_at: new Date(data.created_at), updated_at: new Date(data.updated_at), messages: [] } as Conversation;
+  return { ...data, created_at: new Date(data.created_at), updated_at: new Date(data.updated_at) } as Conversation;
+};
+
+export const addMessage = async (message: Omit<Message, 'id' | 'created_at'>): Promise<Message> => {
+    const { data, error } = await supabase
+        .from('messages')
+        .insert(message)
+        .select()
+        .single();
+    if (error) throw error;
+    return { ...data, created_at: new Date(data.created_at) } as Message;
 };
 
 export const updateConversationTitle = async (id: string, title: string) => {
-  const { error } = await supabase.from('conversations').update({ title, updated_at: new Date().toISOString() }).eq('id', id);
+  const { error } = await supabase
+    .from('conversations')
+    .update({ title, updated_at: new Date().toISOString() })
+    .eq('id', id);
   if (error) throw error;
+};
+
+export const updateConversationTimestamp = async (id: string) => {
+    const { error } = await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', id);
+    if (error) throw error;
 };
 
 export const deleteConversation = async (id: string) => {
@@ -86,7 +119,6 @@ export const flagMessage = async (flaggedMessage: any) => {
 
 // --- TEACHER DASHBOARD ---
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  // Use the new, explicit RPC function to securely fetch students
   const { data, error } = await supabase.rpc('get_students_for_teacher', { teacher_id_param: teacherId });
   if (error) {
     console.error('Error fetching students for teacher:', error);
@@ -96,7 +128,6 @@ export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[
 };
 
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    // Use the RPC function to securely fetch messages
     const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
     if (error) {
         console.error('Error fetching flagged messages:', error);
