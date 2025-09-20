@@ -11,6 +11,7 @@ import { Menu } from 'lucide-react';
 import { storageUtils } from '../utils/storage';
 import { aiService } from '../services/aiService';
 import { useAuth } from '../hooks/useAuth';
+import * as db from '../services/supabaseService';
 
 export default function ChatPage() {
   const { profile, loading, error } = useAuth();
@@ -23,7 +24,6 @@ export default function ChatPage() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   
-  // Quiz-related state
   const [isQuizLoading, setIsQuizLoading] = useState(false);
   const [currentQuizSession, setCurrentQuizSession] = useState<StudySession | null>(null);
   const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
@@ -31,7 +31,6 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   
-  // State for panels
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
   
@@ -44,7 +43,6 @@ export default function ChatPage() {
     }
   });
 
-  // Handler to toggle admin panel view
   const handleToggleAdminPanel = useCallback(() => {
     if (profile?.role === 'admin') {
       setShowAdminPanel(prev => !prev);
@@ -53,7 +51,6 @@ export default function ChatPage() {
     }
   }, [profile]);
   
-  // Handler to toggle teacher dashboard view
   const handleToggleTeacherDashboard = useCallback(() => {
       if (profile?.role === 'teacher') {
           setShowTeacherDashboard(prev => !prev);
@@ -62,74 +59,71 @@ export default function ChatPage() {
       }
   }, [profile]);
   
-  // Handler to switch back to chat view
   const handleSwitchToChatView = useCallback(() => {
       setShowAdminPanel(false);
       setShowTeacherDashboard(false);
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
-  // Create new conversation function
-  const createNewConversation = useCallback((autoSelect: boolean = true) => {
-    if (!profile) return null;
-    
-    const newConversation: Conversation = {
-      id: generateId(),
-      user_id: profile.id,
-      title: 'New Chat',
-      messages: [],
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-    
-    setConversations(prev => [newConversation, ...prev]);
-    
-    if (autoSelect) {
-      setCurrentConversationId(newConversation.id);
-      handleSwitchToChatView();
+  const handleNewConversation = useCallback(async () => {
+    if (!profile) return;
+    try {
+        const newConversation = await db.createConversation(profile.id, 'New Chat');
+        setConversations(prev => [newConversation, ...prev]);
+        setCurrentConversationId(newConversation.id);
+        handleSwitchToChatView();
+        if (window.innerWidth < 1024) {
+            setSidebarOpen(false);
+        }
+    } catch (error) {
+        console.error("Error creating new conversation:", error);
+        alert("Could not create a new conversation. Please try again.");
     }
-    
-    return newConversation;
   }, [profile, handleSwitchToChatView]);
 
-  const handleNewConversation = useCallback(() => {
-    createNewConversation(true);
-    
-    if (window.innerWidth < 1024) {
-      setSidebarOpen(false);
-    }
-  }, [createNewConversation]);
-
-  // Initialize conversations without auto-creation
+  // Effect to fetch initial conversation list for the user
   useEffect(() => {
     if (!profile || initialized) return;
     
-    // Migrate existing data for current user
-    storageUtils.migrateExistingData(profile.id);
+    const fetchConversations = async () => {
+        try {
+            const userConversations = await db.getConversations(profile.id);
+            setConversations(userConversations);
+            if (userConversations.length > 0) {
+                setCurrentConversationId(userConversations[0].id);
+            } else {
+                setCurrentConversationId(null);
+            }
+        } catch (err) {
+            console.error("Failed to fetch conversations:", err);
+        } finally {
+            setInitialized(true);
+        }
+    };
     
-    const storedConversations = storageUtils.getConversations(profile.id);
-    setConversations(storedConversations);
-    
-    // Don't auto-create conversation, let user start manually
-    if (storedConversations.length > 0) {
-      const sorted = [...storedConversations].sort((a, b) => 
-        b.updated_at.getTime() - a.updated_at.getTime()
-      );
-      setCurrentConversationId(sorted[0].id);
-    } else {
-      // Set to null when no conversations exist
-      setCurrentConversationId(null);
-    }
-    
-    setInitialized(true);
+    fetchConversations();
   }, [profile, initialized]);
 
-  // Save conversations with user-specific storage
-  useEffect(() => { 
-    if (initialized && profile) { 
-      storageUtils.saveConversations(conversations, profile.id); 
-    } 
-  }, [conversations, initialized, profile]);
+  // Effect to fetch messages for the currently selected conversation
+  useEffect(() => {
+      if (!currentConversationId) return;
+
+      const currentConvo = conversations.find(c => c.id === currentConversationId);
+      // Only fetch if messages aren't already loaded
+      if (currentConvo && !currentConvo.messages) {
+          const fetchMessages = async () => {
+              try {
+                  const messages = await db.getConversationMessages(currentConversationId);
+                  setConversations(prev => prev.map(c => 
+                      c.id === currentConversationId ? { ...c, messages } : c
+                  ));
+              } catch (err) {
+                  console.error("Failed to fetch messages:", err);
+              }
+          };
+          fetchMessages();
+      }
+  }, [currentConversationId, conversations]);
 
   useEffect(() => { storageUtils.saveSettings(settings); aiService.updateSettings(settings); }, [settings]);
   useEffect(() => { localStorage.setItem('ai-tutor-sidebar-folded', JSON.stringify(sidebarFolded)); }, [sidebarFolded]);
@@ -151,46 +145,37 @@ export default function ChatPage() {
   }, [handleSwitchToChatView]);
 
   const handleSendMessage = useCallback(async (content: string) => {
-    if (!profile) return;
-    
-    let conversationId = currentConversationId;
-    let targetConversation = conversations.find(c => c.id === conversationId);
-    
-    // If no current conversation or current conversation doesn't exist, create one
-    if (!conversationId || !targetConversation) {
-      const newConv = createNewConversation(false);
-      if (!newConv) return;
-      conversationId = newConv.id;
-      targetConversation = newConv;
-      setCurrentConversationId(conversationId);
+    if (!profile || !currentConversationId) {
+        console.error("Cannot send message without a user profile and selected conversation.");
+        return;
     }
     
     const userMessage: Message = { 
-      id: generateId(), 
-      conversation_id: conversationId, 
+      id: generateId(), // Temporary ID for UI
+      conversation_id: currentConversationId, 
       user_id: profile.id, 
       content, 
       role: 'user', 
       created_at: new Date() 
     };
     
-    const isFirstMessage = targetConversation.messages.length === 0;
-    
-    // Update conversation with user message
-    setConversations(prev => prev.map(c => c.id === conversationId ? { 
-      ...c, 
-      title: isFirstMessage ? generateConversationTitle(content) : c.title, 
-      messages: [...c.messages, userMessage], 
-      updated_at: new Date() 
+    // Optimistic UI update
+    setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
+      ...c,
+      messages: [...(c.messages || []), userMessage], 
     } : c));
     
     setIsChatLoading(true);
     stopStreamingRef.current = false;
     
+    // Save user message to DB and update timestamp
+    db.addMessage({ ...userMessage, model: undefined }).catch(err => console.error("Failed to save user message:", err));
+    db.updateConversationTimestamp(currentConversationId).catch(err => console.error("Failed to update timestamp:", err));
+    
     try {
       const assistantMessage: Message = { 
-        id: generateId(), 
-        conversation_id: conversationId, 
+        id: generateId(), // Temporary ID
+        conversation_id: currentConversationId, 
         user_id: profile.id, 
         content: '', 
         role: 'assistant', 
@@ -200,9 +185,7 @@ export default function ChatPage() {
       
       setStreamingMessage(assistantMessage);
       
-      // Get updated conversation for API call
-      const updatedConv = conversations.find(c => c.id === conversationId);
-      const messagesForApi = [...(updatedConv?.messages || []), userMessage].map(m => ({ 
+      const messagesForApi = [...(currentConversation?.messages || []), userMessage].map(m => ({ 
         role: m.role, 
         content: m.content 
       }));
@@ -215,37 +198,38 @@ export default function ChatPage() {
       }
       
       if (!stopStreamingRef.current && fullResponse.trim()) {
-        setConversations(prev => prev.map(c => c.id === conversationId ? { 
+        const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
+        
+        // Save assistant message to DB
+        db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
+        
+        // Final UI update
+        setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
           ...c, 
-          messages: [...c.messages, { ...assistantMessage, content: fullResponse }],
-          updated_at: new Date()
+          messages: [...(c.messages || []), finalAssistantMessage],
         } : c));
       }
     } catch (error) {
       console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      setConversations(prev => prev.map(c => c.id === conversationId ? { 
+      const errorMessage = { 
+        id: generateId(), conversation_id: currentConversationId, user_id: profile.id, 
+        role: 'assistant', content: errorContent, created_at: new Date() 
+      } as Message;
+      setConversations(prev => prev.map(c => c.id === currentConversationId ? { 
         ...c, 
-        messages: [...c.messages, { 
-          id: generateId(), 
-          conversation_id: conversationId, 
-          user_id: profile.id, 
-          role: 'assistant', 
-          content: errorContent, 
-          created_at: new Date() 
-        }],
-        updated_at: new Date()
+        messages: [...(c.messages || []), errorMessage]
       } : c));
+      db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
       setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
-  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
+  }, [profile, currentConversationId, conversations, settings.selectedModel, currentConversation]);
 
-  // Quiz generation functionality
   const handleGenerateQuiz = useCallback(async () => {
-    if (!currentConversation || currentConversation.messages.length < 2) {
+    if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
       console.warn('Need at least 2 messages to generate quiz');
       return;
     }
@@ -263,28 +247,36 @@ export default function ChatPage() {
     }
   }, [currentConversation]);
 
-  // Fixed delete conversation handler
-  const handleDeleteConversation = useCallback((id: string) => {
-    setConversations(prev => {
-      const remaining = prev.filter(c => c.id !== id);
-      
-      // If we're deleting the current conversation
-      if (currentConversationId === id) {
-        if (remaining.length > 0) {
-          const sorted = [...remaining].sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime());
-          setCurrentConversationId(sorted[0].id);
-        } else {
-          setCurrentConversationId(null);
-        }
-      }
-      
-      return remaining;
-    });
-  }, [currentConversationId]);
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    const originalConversations = conversations;
+    
+    const remaining = conversations.filter(c => c.id !== id);
+    setConversations(remaining);
+    
+    if (currentConversationId === id) {
+        setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
+    }
+    
+    try {
+        await db.deleteConversation(id);
+    } catch (err) {
+        console.error("Failed to delete conversation:", err);
+        setConversations(originalConversations); // Revert on failure
+        alert("Could not delete the conversation.");
+    }
+  }, [conversations, currentConversationId]);
 
-  const handleRenameConversation = useCallback((id: string, newTitle: string) => {
+  const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
+    const originalTitle = conversations.find(c => c.id === id)?.title;
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
-  }, []);
+    try {
+        await db.updateConversationTitle(id, newTitle);
+    } catch (err) {
+        console.error("Failed to rename conversation:", err);
+        setConversations(prev => prev.map(c => c.id === id ? { ...c, title: originalTitle || c.title } : c));
+        alert("Could not rename the conversation.");
+    }
+  }, [conversations]);
 
   const getActiveView = () => {
       if (showAdminPanel) return 'admin';
@@ -323,7 +315,7 @@ export default function ChatPage() {
       )}
       
       <Sidebar
-        conversations={[...conversations].sort((a, b) => b.updated_at.getTime() - a.updated_at.getTime())}
+        conversations={conversations}
         notes={[]}
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
