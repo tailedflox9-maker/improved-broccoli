@@ -23,13 +23,7 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
     .from('conversations')
     .select('*')
     .eq('user_id', userId)
-    // =================================================================
-    // == START OF CHANGES: Only fetch non-deleted chats for regular users
-    // =================================================================
     .eq('is_deleted', false)
-    // =================================================================
-    // == END OF CHANGES
-    // =================================================================
     .order('updated_at', { ascending: false });
   if (error) throw error;
   return data.map(conv => ({
@@ -40,16 +34,101 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
 };
 
 export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
-    const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
-    if (error) throw error;
-    return data.map(msg => ({
-        ...msg,
-        created_at: new Date(msg.created_at)
-    })) as Message[];
+    console.log('Fetching messages for conversation ID:', conversationId); // Debug log
+    
+    if (!conversationId || conversationId.trim() === '') {
+        console.error('Invalid conversation ID provided:', conversationId);
+        throw new Error('Conversation ID is required');
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true });
+            
+        if (error) {
+            console.error('Supabase error fetching messages:', error);
+            throw error;
+        }
+        
+        console.log('Raw message data from database:', data); // Debug log
+        
+        if (!data) {
+            console.log('No data returned from query');
+            return [];
+        }
+        
+        const messages = data.map(msg => ({
+            ...msg,
+            created_at: new Date(msg.created_at)
+        })) as Message[];
+        
+        console.log('Processed messages:', messages); // Debug log
+        
+        return messages;
+    } catch (error) {
+        console.error('Error in getConversationMessages:', error);
+        throw error;
+    }
+};
+
+// Admin-specific message fetching function
+export const getConversationMessages_Admin = async (conversationId: string): Promise<Message[]> => {
+    console.log('Admin: Fetching messages for conversation ID:', conversationId);
+    
+    if (!conversationId || conversationId.trim() === '') {
+        console.error('Invalid conversation ID provided:', conversationId);
+        throw new Error('Conversation ID is required');
+    }
+    
+    try {
+        // Try with admin client first
+        const adminClient = getAdminClient();
+        const { data: adminData, error: adminError } = await adminClient
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true });
+            
+        if (!adminError && adminData) {
+            console.log('Admin client successful, found messages:', adminData.length);
+            return adminData.map(msg => ({
+                ...msg,
+                created_at: new Date(msg.created_at)
+            })) as Message[];
+        }
+        
+        console.log('Admin client failed, trying regular client:', adminError);
+        
+        // Fallback to regular client
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true });
+            
+        if (error) {
+            console.error('Both admin and regular client failed:', error);
+            throw error;
+        }
+        
+        console.log('Regular client result:', data?.length || 0, 'messages');
+        
+        if (!data) {
+            return [];
+        }
+        
+        return data.map(msg => ({
+            ...msg,
+            created_at: new Date(msg.created_at)
+        })) as Message[];
+        
+    } catch (error) {
+        console.error('Error in getConversationMessages_Admin:', error);
+        throw error;
+    }
 };
 
 export const createConversation = async (userId: string, title: string): Promise<Conversation> => {
@@ -88,20 +167,14 @@ export const updateConversationTimestamp = async (id: string) => {
     if (error) throw error;
 };
 
-// =================================================================
-// == START OF CHANGES: This is now a SOFT DELETE
-// =================================================================
+// Soft delete for regular users
 export const deleteConversation = async (id: string) => {
-  // This now sets `is_deleted` to true instead of deleting the row.
   const { error } = await supabase
     .from('conversations')
     .update({ is_deleted: true })
     .eq('id', id);
   if (error) throw error;
 };
-// =================================================================
-// == END OF CHANGES
-// =================================================================
 
 // --- NOTES ---
 export const getNotes = async (userId: string): Promise<Note[]> => {
@@ -166,7 +239,7 @@ export const getStudentStats = async (studentId: string) => {
   return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
-// --- ADMIN PANEL - ENHANCED WITH BETTER ERROR HANDLING ---
+// --- ADMIN PANEL ---
 export const getAllUsers = async (): Promise<Profile[]> => {
     try {
         const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_users_admin');
@@ -183,11 +256,8 @@ export const getAllUsers = async (): Promise<Profile[]> => {
     }
 };
 
-// =================================================================
-// == START OF CHANGES: New Admin functions for chat history
-// =================================================================
+// Admin function to get ALL conversations (including soft-deleted)
 export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
-  // Fetches ALL conversations for a user, including soft-deleted ones.
   const { data, error } = await supabase
     .from('conversations')
     .select('*')
@@ -201,15 +271,12 @@ export const getAllConversationsForUser_Admin = async (userId: string): Promise<
   })) as Conversation[];
 };
 
+// Hard delete for admins only
 export const permanentDeleteConversation = async (id: string): Promise<void> => {
-  // This is a HARD delete, only for admins.
   const adminClient = getAdminClient();
   const { error } = await adminClient.from('conversations').delete().eq('id', id);
   if (error) throw new Error(`Failed to permanently delete conversation: ${error.message}`);
 };
-// =================================================================
-// == END OF CHANGES
-// =================================================================
 
 export const createUser = async (userData: { email: string; password: string; full_name: string; role: 'student' | 'teacher' }): Promise<any> => {
   try {
