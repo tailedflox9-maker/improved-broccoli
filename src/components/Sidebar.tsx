@@ -11,21 +11,45 @@ import {
   Edit,
   LogOut,
   LayoutDashboard,
-  Shield
+  Shield,
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  ClipboardCheck,
+  CheckCircle,
+  Clock,
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 } from 'lucide-react';
-import { Conversation, Note, Profile, APISettings } from '../types';
+import { Conversation, Note, Profile, APISettings, QuizAssignmentWithDetails } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
+import { formatDate } from '../utils/helpers';
 
 interface SidebarProps {
   conversations: Conversation[];
   notes: Note[];
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  assignedQuizzes: QuizAssignmentWithDetails[];
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
   activeView: 'chat' | 'note' | 'admin' | 'dashboard';
   currentConversationId: string | null;
   currentNoteId: string | null;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
   onSelectNote: (id: string | null) => void;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
+  onSelectAssignedQuiz: (quiz: QuizAssignmentWithDetails) => void;
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   onDeleteNote: (id: string) => void;
@@ -45,12 +69,14 @@ interface SidebarProps {
 export function Sidebar({
   conversations,
   notes,
+  assignedQuizzes,
   activeView,
   currentConversationId,
   currentNoteId,
   onNewConversation,
   onSelectConversation,
   onSelectNote,
+  onSelectAssignedQuiz,
   onDeleteConversation,
   onRenameConversation,
   onDeleteNote,
@@ -67,7 +93,7 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [view, setView] = useState<'chats' | 'notes'>('chats');
+  const [view, setView] = useState<'chats' | 'notes' | 'quizzes'>('chats');
   const { logout } = useAuth();
 
   const filteredConversations = useMemo(() =>
@@ -82,6 +108,13 @@ export function Sidebar({
       n.title.toLowerCase().includes(searchQuery.toLowerCase())
     ),
     [notes, searchQuery]
+  );
+
+  const filteredQuizzes = useMemo(() =>
+    assignedQuizzes.filter(q =>
+      q.generated_quizzes.topic.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [assignedQuizzes, searchQuery]
   );
 
   const handleStartEditing = (conversation: Conversation) => {
@@ -159,6 +192,14 @@ export function Sidebar({
               >
                 Notes
               </button>
+              {userProfile?.role === 'student' && (
+                <button 
+                  onClick={() => setView('quizzes')} 
+                  className={`flex-1 btn-tab ${view === 'quizzes' ? 'active' : ''}`}
+                >
+                  Quizzes
+                </button>
+              )}
             </div>
             <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -234,6 +275,35 @@ export function Sidebar({
                   </button>
                 </div>
                 <p className="text-xs opacity-70 mt-1 line-clamp-2">{n.content}</p>
+              </div>
+            ))}
+
+            {view === 'quizzes' && !isFolded && filteredQuizzes.map(q => (
+              <div
+                key={q.id}
+                onClick={() => onSelectAssignedQuiz(q)}
+                className="group p-3 rounded-lg cursor-pointer hover:bg-[var(--color-card)]"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-sm font-semibold truncate pr-2">{q.generated_quizzes.topic}</span>
+                  {q.completed_at ? (
+                    <span className="text-xs font-bold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                      <CheckCircle size={12}/> Completed
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-yellow-400 bg-yellow-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                      <Clock size={12}/> To Do
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Assigned by: <span className="font-medium">{q.profiles.full_name || 'Teacher'}</span>
+                </p>
+                {q.completed_at && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Score: <span className="font-bold text-white">{q.score}/{q.total_questions}</span>
+                  </p>
+                )}
               </div>
             ))}
           </>
