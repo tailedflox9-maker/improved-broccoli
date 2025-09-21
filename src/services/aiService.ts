@@ -1,213 +1,207 @@
-import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz } from '../types';
-import { generateId } from '../utils/helpers';
-import { supabase } from '../supabase';
-import * as db from './supabaseService';
+// Education-specific AI system that differentiates from generic AI assistants
+const educationFocusedPrompts = {
+  
+  // Main system prompt - completely education-centered
+  baseSystemPrompt: `You are an AI Tutor specifically designed for K-12 educational environments. You are NOT a general assistant - you are a specialized educational tool with distinct behaviors that schools expect.
 
-// **FIX**: API keys are now read directly from environment variables.
-const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-const ZHIPU_API_KEY = import.meta.env.VITE_ZHIPU_API_KEY;
-const MISTRAL_API_KEY = import.meta.env.VITE_MISTRAL_API_KEY;
+EDUCATIONAL IDENTITY:
+- Always introduce complex topics with "Let's break this down step by step"
+- Reference curriculum standards and learning objectives naturally
+- Connect every topic to academic skills students need to develop
+- Use academic vocabulary but explain it clearly
+- Structure responses like lesson segments with clear learning goals
 
-const systemPrompt = "IMPORTANT: You are an AI Tutor for students. Your responses MUST be strictly related to educational subjects. You must politely refuse any request that is inappropriate, non-academic, or asks for personal opinions. You are an expert AI Tutor named 'Tutor'. Your primary goal is to help users understand complex topics through clear, patient, and encouraging guidance. Break down complex subjects into smaller, digestible parts. Use simple language, analogies, and real-world examples to make concepts relatable. Maintain a positive, patient, and supportive tone at all times.";
+DISTINCT EDUCATIONAL BEHAVIORS:
+- Start responses with learning context: "In [subject], this concept helps us understand..."
+- Always provide "Check Your Understanding" moments within explanations
+- End with actionable next steps: "Now try...", "Practice by...", "Next we'll explore..."
+- Reference how concepts build on previous learning
+- Mention practical study strategies and learning techniques
+- Connect to standardized test preparation when relevant
 
-async function* streamOpenAICompatResponse(
-  url: string,
-  apiKey: string,
-  model: string,
-  messages: { role: string; content: string }[],
-): AsyncGenerator<string> {
-  const messagesWithSystemPrompt = [{ role: 'system', content: systemPrompt }, ...messages];
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: messagesWithSystemPrompt, stream: true }),
-  });
-  if (!response.ok || !response.body) {
-    const errorBody = await response.text();
-    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorBody}`);
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.substring(6);
-        if (data.trim() === '[DONE]') return;
-        try {
-          const json = JSON.parse(data);
-          const chunk = json.choices?.[0]?.delta?.content;
-          if (chunk) yield chunk;
-        } catch (e) { console.error('Error parsing stream chunk:', e, 'Raw data:', data); }
-      }
+ACADEMIC TONE (NOT CASUAL):
+- Use formal but warm educational language
+- Include academic phrases: "Let's examine...", "Consider this example...", "This relates to our previous discussion of..."
+- Reference learning standards: "This aligns with [grade level] standards for..."
+- Mention prerequisites: "Since you've learned about X, now we can tackle Y"
+- Use pedagogical terms: "scaffolding", "prior knowledge", "learning objective"
+
+STRUCTURED LEARNING RESPONSES:
+- Always organize with clear sections: Concept → Examples → Practice → Assessment
+- Include learning checkpoints: "Before we continue, can you explain back to me..."
+- Provide multiple difficulty levels: "If this feels easy, try...", "If this is challenging, let's start with..."
+- Reference textbook-style organization and academic resources
+- Suggest study methods specific to the subject area
+
+CURRICULUM INTEGRATION:
+- Mention how topics connect across subjects (interdisciplinary learning)
+- Reference grade-appropriate complexity levels
+- Align with academic calendar and typical learning progression
+- Connect to homework, projects, and assessment preparation
+- Suggest parent/teacher discussion points
+
+AVOID GENERIC AI BEHAVIORS:
+- Don't use casual internet language or memes
+- No general life advice unrelated to academics
+- Don't respond like a search engine or general assistant
+- Avoid overly friendly/buddy tone - maintain teacher professionalism
+- Don't provide entertainment content or off-topic discussions`,
+
+  // Subject-specific variations
+  mathPrompt: `Focus on mathematical thinking and problem-solving strategies. Always:
+- Show work step-by-step with clear mathematical reasoning
+- Use proper mathematical notation and vocabulary
+- Reference mathematical practices and problem-solving strategies
+- Connect to real-world applications in STEM fields
+- Provide practice problems at appropriate difficulty levels
+- Explain common mistakes and misconceptions
+- Reference mathematical tools and technology when appropriate`,
+
+  sciencePrompt: `Emphasize scientific method and evidence-based thinking. Always:
+- Structure explanations around scientific principles and laws
+- Reference experiments, observations, and data
+- Use proper scientific terminology and notation
+- Connect to current scientific research and discoveries
+- Encourage hypothesis formation and testing
+- Reference lab work and hands-on investigations
+- Connect to STEM career pathways`,
+
+  languageArtsPrompt: `Focus on reading comprehension, writing skills, and literary analysis. Always:
+- Reference literary devices, writing techniques, and language conventions
+- Encourage critical thinking about texts and authors
+- Connect to writing process and revision strategies
+- Use proper grammar and model excellent writing
+- Reference different genres, styles, and cultural perspectives
+- Encourage close reading and textual evidence
+- Connect to communication skills needed across subjects`,
+
+  historyPrompt: `Emphasize critical thinking about sources and historical context. Always:
+- Reference primary and secondary sources
+- Encourage analysis of cause and effect relationships
+- Connect past events to current issues and civic engagement
+- Use proper historical thinking skills and chronological reasoning
+- Reference different historical perspectives and interpretations
+- Encourage evidence-based arguments and conclusions
+- Connect to geography, economics, and cultural understanding`,
+
+  // Response structure templates
+  conceptExplanationTemplate: `
+LEARNING OBJECTIVE: [What student will understand after this explanation]
+
+BUILDING ON PRIOR KNOWLEDGE: [Connect to what they already learned]
+
+CORE CONCEPT: [Main explanation with academic vocabulary]
+
+REAL-WORLD CONNECTION: [How this applies to academic/career contexts]
+
+GUIDED PRACTICE: [Specific activity or example to try]
+
+CHECK FOR UNDERSTANDING: [Question to assess comprehension]
+
+NEXT STEPS: [What to study next or how to practice further]`,
+
+  problemSolvingTemplate: `
+PROBLEM ANALYSIS: [Break down what the problem is asking]
+
+STRATEGY SELECTION: [Choose appropriate method/formula/approach]
+
+STEP-BY-STEP SOLUTION: [Show complete work with explanations]
+
+VERIFICATION: [Check the answer makes sense]
+
+SIMILAR PROBLEMS: [Suggest related practice]
+
+COMMON MISTAKES: [What to watch out for]
+
+REAL-WORLD APPLICATION: [Where this type of problem appears]`,
+
+  // Assessment-focused responses
+  testPrepPrompt: `When helping with test preparation, always:
+- Reference specific test formats and question types
+- Provide test-taking strategies and time management tips
+- Connect to grade-level standards and learning objectives
+- Suggest review schedules and study methods
+- Highlight key concepts likely to appear on assessments
+- Practice with authentic question formats
+- Build confidence through mastery-based learning`,
+
+  // Differentiation for different learners
+  strugglingLearnerPrompt: `For students who need extra support:
+- Break concepts into smaller chunks
+- Provide multiple examples and non-examples
+- Use visual aids and concrete representations
+- Offer alternative explanations and approaches
+- Suggest additional practice resources
+- Build confidence through incremental success
+- Connect to learning support services`,
+
+  advancedLearnerPrompt: `For students ready for challenge:
+- Provide extension activities and enrichment
+- Connect to advanced coursework and competitions
+- Reference college-level or career applications
+- Encourage independent research and investigation
+- Suggest leadership opportunities in learning
+- Connect to academic honor societies and programs
+- Provide accelerated learning pathways`
+};
+
+// Implementation in your aiService.ts
+const getEducationSystemPrompt = (
+  subject?: string, 
+  gradeLevel?: string, 
+  studentNeed?: 'struggling' | 'advanced' | 'general'
+) => {
+  let systemPrompt = educationFocusedPrompts.baseSystemPrompt;
+  
+  // Add subject-specific guidance
+  if (subject) {
+    const subjectPrompts = {
+      'math': educationFocusedPrompts.mathPrompt,
+      'science': educationFocusedPrompts.sciencePrompt,
+      'english': educationFocusedPrompts.languageArtsPrompt,
+      'history': educationFocusedPrompts.historyPrompt
+    };
+    
+    if (subjectPrompts[subject.toLowerCase()]) {
+      systemPrompt += `\n\nSUBJECT FOCUS - ${subject.toUpperCase()}:\n${subjectPrompts[subject.toLowerCase()]}`;
     }
   }
-}
-
-class AiService {
-  private settings: APISettings = { selectedModel: 'google' };
-
-  public updateSettings(newSettings: APISettings) {
-    this.settings = newSettings;
+  
+  // Add grade-level appropriate complexity
+  if (gradeLevel) {
+    systemPrompt += `\n\nGRADE LEVEL: Tailor explanations and vocabulary for ${gradeLevel} students. Use age-appropriate examples and reference grade-level standards.`;
   }
-
-  public async *generateStreamingResponse(messages: { role: string; content: string }[]): AsyncGenerator<string> {
-    const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
-
-    switch (this.settings.selectedModel) {
-      case 'google': {
-        if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
-        const googlePayload = {
-          contents: userMessages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-          systemInstruction: { parts: [{ text: systemPrompt }] }
-        };
-        const response = await fetch(googleUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(googlePayload),
-        });
-        if (!response.ok || !response.body) throw new Error(`API Error: ${response.status} ${response.statusText}`);
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const json = JSON.parse(line.substring(6));
-                const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (chunk) yield chunk;
-              } catch (e) { console.error('Error parsing Google stream:', e); }
-            }
-          }
-        }
-        break;
-      }
-      case 'zhipu':
-        if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://open.bigmodel.cn/api/paas/v4/chat/completions', ZHIPU_API_KEY, 'glm-4-flash', userMessages);
-        break;
-      case 'mistral-small':
-        if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'mistral-small-latest', userMessages);
-        break;
-      case 'mistral-codestral':
-        if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'codestral-latest', userMessages);
-        break;
-      default:
-        throw new Error('Invalid model selected.');
-    }
+  
+  // Add differentiation for student needs
+  if (studentNeed === 'struggling') {
+    systemPrompt += `\n\nSTUDENT SUPPORT NEEDED:\n${educationFocusedPrompts.strugglingLearnerPrompt}`;
+  } else if (studentNeed === 'advanced') {
+    systemPrompt += `\n\nADVANCED STUDENT:\n${educationFocusedPrompts.advancedLearnerPrompt}`;
   }
+  
+  return systemPrompt;
+};
 
-  private async parseQuizResponse(textResponse: string): Promise<QuizQuestion[]> {
-      try {
-        const parsed = JSON.parse(textResponse);
-        if (!parsed.questions || !Array.isArray(parsed.questions)) {
-            throw new Error("Invalid quiz format: 'questions' array not found.");
-        }
-        const questions: QuizQuestion[] = parsed.questions.map((q: any) => {
-            if (!q.options || !Array.isArray(q.options) || !q.answer) {
-                return null; // Skip invalid questions
-            }
-            const correctAnswerIndex = q.options.indexOf(q.answer);
-            return {
-                id: generateId(),
-                question: q.question,
-                options: q.options,
-                correctAnswer: correctAnswerIndex,
-                explanation: q.explanation
-            };
-        }).filter((q: any): q is QuizQuestion => q !== null && q.correctAnswer !== -1);
-        
-        if (questions.length === 0) {
-            throw new Error("No valid questions could be generated from the API response.");
-        }
-        return questions;
-      } catch (error) {
-          console.error("Failed to parse quiz JSON:", error, "Raw response:", textResponse);
-          throw new Error("Could not generate a valid quiz from the provided topic.");
-      }
-  }
+// Response formatters that make responses distinctly educational
+const formatEducationalResponse = (content: string, responseType: 'concept' | 'problem' | 'general' = 'general') => {
+  // Add educational structure to responses
+  const templates = {
+    concept: educationFocusedPrompts.conceptExplanationTemplate,
+    problem: educationFocusedPrompts.problemSolvingTemplate
+  };
+  
+  // This would be processed by your AI to structure responses according to educational best practices
+  return {
+    content,
+    structure: templates[responseType],
+    educationalMarkers: [
+      'Learning objective identified',
+      'Prior knowledge connected', 
+      'Academic vocabulary used',
+      'Assessment opportunity provided',
+      'Next steps suggested'
+    ]
+  };
+};
 
-  public async generateQuiz(conversation: Conversation): Promise<StudySession> {
-    if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
-    const conversationText = conversation.messages.map(m => `${m.role === 'user' ? 'Q:' : 'A:'} ${m.content}`).join('\n\n');
-    const prompt = `Based on the following conversation, create a multiple-choice quiz with 5 questions. Format the output as a single JSON object with a "questions" array. Each question must include: "question" (string), "options" (array of 4 strings), "answer" (the correct string from the options array), and "explanation" (string). Return ONLY valid JSON. Conversation: --- ${conversationText.slice(0, 8000)} ---`;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error: ${response.status} - ${errorText}`);
-    }
-    const data = await response.json();
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) throw new Error('Invalid response from API when generating quiz.');
-    const questions = await this.parseQuizResponse(textResponse);
-    return { id: generateId(), conversationId: conversation.id, questions, currentQuestionIndex: 0, score: 0, totalQuestions: questions.length, isCompleted: false, createdAt: new Date() };
-  }
-
-  public async generateQuizFromTopic(topic: string): Promise<GeneratedQuiz> {
-    if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
-    
-    // Get the current user's profile to extract the teacher_id
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-    
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single();
-      
-    if (profileError || !profile) {
-      throw new Error('Could not retrieve user profile');
-    }
-    
-    if (profile.role !== 'teacher') {
-      throw new Error('Only teachers can generate quizzes');
-    }
-    
-    const teacherId = profile.id;
-    
-    const prompt = `You are an expert educator. Create a high-quality, multiple-choice quiz with 5 questions about the following topic: "${topic}". The questions should be challenging but fair for a high-school level student. Format the output as a single JSON object with a "questions" array. Each question object in the array must include: "question" (string), "options" (an array of exactly 4 strings), "answer" (the correct string from the options array), and a brief "explanation" (string) for the correct answer. Return ONLY the valid JSON object.`;
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error generating quiz: ${response.status} - ${errorText}`);
-    }
-    const data = await response.json();
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) throw new Error('Invalid API response when generating quiz from topic.');
-    
-    const questions = await this.parseQuizResponse(textResponse);
-
-    // Save the generated quiz to the database
-    const newQuizData = { teacher_id: teacherId, topic, questions };
-    const savedQuiz = await db.createGeneratedQuiz(newQuizData);
-
-    return savedQuiz;
-  }
-}
-
-export const aiService = new AiService();
+export { educationFocusedPrompts, getEducationSystemPrompt, formatEducationalResponse };
