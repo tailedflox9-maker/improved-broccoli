@@ -426,15 +426,12 @@ export const flagMessage = async (flaggedMessage: any) => {
 };
 
 // --- TEACHER DASHBOARD ---
-
-// =================================== FIX START ===================================
-// This function is rewritten to use a direct table query instead of a potentially missing RPC.
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('teacher_id', teacherId)
-    .eq('role', 'student'); // Ensure we only get students
+    .eq('role', 'student');
 
   if (error) {
     console.error('Error fetching students for teacher:', error);
@@ -443,9 +440,7 @@ export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[
   return data as Profile[];
 };
 
-// This function is rewritten to use a direct query with a join, which is more robust than an RPC.
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    // We need to find all students for the given teacher first.
     const { data: students, error: studentsError } = await supabase
       .from('profiles')
       .select('id')
@@ -457,12 +452,11 @@ export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<F
     }
     
     if (!students || students.length === 0) {
-      return []; // Teacher has no students, so no flagged messages.
+      return [];
     }
 
     const studentIds = students.map(s => s.id);
 
-    // Now, fetch flagged messages from those students, and join the student's name.
     const { data, error } = await supabase
       .from('flagged_messages')
       .select(`
@@ -480,7 +474,6 @@ export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<F
         throw error;
     }
 
-    // The data structure from the join is slightly different, so we map it to our expected `FlaggedMessage` type.
     const formattedData = data.map((msg: any) => ({
       id: msg.id,
       message_content: msg.message_content,
@@ -491,7 +484,6 @@ export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<F
     
     return formattedData as FlaggedMessage[];
 };
-// =================================== FIX END =====================================
 
 export const getStudentStatsImproved = async (studentId: string) => {
   try {
@@ -609,6 +601,8 @@ export const createUser = async (userData: { email: string; password: string; fu
   }
 };
 
+// =================================== FIX START ===================================
+// The => was removed here to fix the syntax error.
 export const assignTeacherToStudent = async (teacherId: string, studentId: string): Promise<void> => {
   try {
     if (!teacherId?.trim() || !studentId?.trim()) throw new Error('Teacher and Student IDs are required.');
@@ -620,7 +614,8 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
       .eq('id', studentId);
     if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
 
-  } catch (error: any) => {
+  } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
+// =================================== FIX END =====================================
