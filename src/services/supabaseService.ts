@@ -259,28 +259,21 @@ export const markQuizAsCompleted = async (assignmentId: string, score: number, t
   if (error) throw error;
 };
 
-// Function to delete a generated quiz
 export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   try {
-    // First check if there are any assignments for this quiz
     const { data: assignments, error: checkError } = await supabase
       .from('quiz_assignments')
       .select('id')
       .eq('quiz_id', quizId)
       .limit(1);
-
     if (checkError) throw checkError;
-
     if (assignments && assignments.length > 0) {
       throw new Error('Cannot delete quiz that has been assigned to students. Please remove assignments first.');
     }
-
-    // Delete the quiz if no assignments exist
     const { error } = await supabase
       .from('generated_quizzes')
       .delete()
       .eq('id', quizId);
-
     if (error) throw error;
   } catch (error: any) {
     console.error('Error deleting quiz:', error);
@@ -288,7 +281,6 @@ export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   }
 };
 
-// Function to get quiz assignments with completion details for a teacher
 export const getQuizAssignmentDetails = async (teacherId: string) => {
   try {
     const { data, error } = await supabase
@@ -304,7 +296,6 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
       `)
       .eq('teacher_id', teacherId)
       .order('created_at', { ascending: false });
-
     if (error) throw error;
     return data || [];
   } catch (error) {
@@ -313,7 +304,6 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
   }
 };
 
-// Function to unassign a quiz from students
 export const unassignQuizFromStudents = async (quizId: string, studentIds: string[]): Promise<void> => {
   try {
     const { error } = await supabase
@@ -321,8 +311,7 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
       .delete()
       .eq('quiz_id', quizId)
       .in('student_id', studentIds)
-      .is('completed_at', null); // Only unassign if not completed
-
+      .is('completed_at', null);
     if (error) throw error;
   } catch (error: any) {
     console.error('Error unassigning quiz:', error);
@@ -330,15 +319,11 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
   }
 };
 
-// =================================================================
-// == START OF CHANGES
-// =================================================================
 // --- ASSIGNMENTS ---
 export const createAssignment = async (
   assignment: Omit<Assignment, 'id' | 'created_at'>,
   studentIds: string[]
 ): Promise<Assignment> => {
-  // 1. Create the main assignment entry
   const { data: newAssignment, error: assignmentError } = await supabase
     .from('assignments')
     .insert(assignment)
@@ -346,7 +331,6 @@ export const createAssignment = async (
     .single();
   if (assignmentError) throw assignmentError;
 
-  // 2. Create student_assignment entries for each student
   const studentAssignments = studentIds.map(student_id => ({
     assignment_id: newAssignment.id,
     student_id: student_id,
@@ -356,11 +340,9 @@ export const createAssignment = async (
     .from('student_assignments')
     .insert(studentAssignments);
   if (studentAssignmentError) {
-    // Rollback the assignment creation if student assignments fail
     await supabase.from('assignments').delete().eq('id', newAssignment.id);
     throw studentAssignmentError;
   }
-
   return newAssignment as Assignment;
 };
 
@@ -436,10 +418,6 @@ export const gradeAssignment = async (studentAssignmentId: string, feedback: str
     if (error) throw error;
     return data as StudentAssignment;
 };
-// =================================================================
-// == END OF CHANGES
-// =================================================================
-
 
 // --- SAFETY ---
 export const flagMessage = async (flaggedMessage: any) => {
@@ -448,8 +426,16 @@ export const flagMessage = async (flaggedMessage: any) => {
 };
 
 // --- TEACHER DASHBOARD ---
+
+// =================================== FIX START ===================================
+// This function is rewritten to use a direct table query instead of a potentially missing RPC.
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  const { data, error } = await supabase.rpc('get_students_for_teacher', { teacher_id_param: teacherId });
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .eq('role', 'student'); // Ensure we only get students
+
   if (error) {
     console.error('Error fetching students for teacher:', error);
     throw error;
@@ -457,19 +443,58 @@ export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[
   return data as Profile[];
 };
 
+// This function is rewritten to use a direct query with a join, which is more robust than an RPC.
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
+    // We need to find all students for the given teacher first.
+    const { data: students, error: studentsError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('teacher_id', teacherId);
+
+    if (studentsError) {
+      console.error('Error fetching student IDs for teacher:', studentsError);
+      throw studentsError;
+    }
+    
+    if (!students || students.length === 0) {
+      return []; // Teacher has no students, so no flagged messages.
+    }
+
+    const studentIds = students.map(s => s.id);
+
+    // Now, fetch flagged messages from those students, and join the student's name.
+    const { data, error } = await supabase
+      .from('flagged_messages')
+      .select(`
+        id,
+        message_content,
+        student_id,
+        created_at,
+        profiles ( full_name )
+      `)
+      .in('student_id', studentIds)
+      .order('created_at', { ascending: false });
+
     if (error) {
         console.error('Error fetching flagged messages:', error);
         throw error;
     }
-    return data as FlaggedMessage[];
-};
 
-// Improved student stats function that includes quiz assignment data
+    // The data structure from the join is slightly different, so we map it to our expected `FlaggedMessage` type.
+    const formattedData = data.map((msg: any) => ({
+      id: msg.id,
+      message_content: msg.message_content,
+      student_id: msg.student_id,
+      created_at: msg.created_at,
+      student_name: msg.profiles?.full_name || 'Unknown Student'
+    }));
+    
+    return formattedData as FlaggedMessage[];
+};
+// =================================== FIX END =====================================
+
 export const getStudentStatsImproved = async (studentId: string) => {
   try {
-    // Count conversations (questions asked)
     const { count: questionCount, error: convError } = await supabase
       .from('conversations')
       .select('*', { count: 'exact', head: true })
@@ -478,7 +503,6 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (convError) throw convError;
 
-    // Get completed quiz assignments (more accurate than old quiz table)
     const { data: completedAssignments, error: assignmentError } = await supabase
       .from('quiz_assignments')
       .select('score, total_questions')
@@ -487,7 +511,6 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (assignmentError) throw assignmentError;
 
-    // Fallback to old quiz table for backward compatibility
     const { data: oldQuizzes, error: oldQuizError } = await supabase
       .from('quizzes')
       .select('score, total_questions')
@@ -495,7 +518,6 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (oldQuizError) throw oldQuizError;
 
-    // Combine both sources
     const allQuizzes = [
       ...(completedAssignments || []),
       ...(oldQuizzes || [])
@@ -506,7 +528,7 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (quizAttempts > 0) {
       const totalScore = allQuizzes.reduce((acc, quiz) => {
-        const percentage = (quiz.score / quiz.total_questions) * 100;
+        const percentage = (quiz.score && quiz.total_questions) ? (quiz.score / quiz.total_questions) * 100 : 0;
         return acc + percentage;
       }, 0);
       averageScore = totalScore / quizAttempts;
@@ -515,22 +537,12 @@ export const getStudentStatsImproved = async (studentId: string) => {
     return {
       questionCount: questionCount ?? 0,
       quizAttempts,
-      averageScore: Math.round(averageScore * 10) / 10 // Round to 1 decimal
+      averageScore: Math.round(averageScore * 10) / 10
     };
   } catch (error) {
     console.error('Error fetching improved student stats:', error);
     throw error;
   }
-};
-
-export const getStudentStats = async (studentId: string) => {
-  const { count: questionCount, error: convError } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', studentId);
-  if (convError) throw convError;
-  const { data: quizzes, error: quizError } = await supabase.from('quizzes').select('score, total_questions').eq('user_id', studentId);
-  if (quizError) throw quizError;
-  const quizAttempts = quizzes ? quizzes.length : 0;
-  const averageScore = quizAttempts > 0 ? (quizzes.reduce((acc, q) => acc + (q.score / q.total_questions), 0) / quizAttempts) * 100 : 0;
-  return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
 // --- ADMIN PANEL ---
@@ -550,7 +562,6 @@ export const getAllUsers = async (): Promise<Profile[]> => {
     }
 };
 
-// Admin function to get ALL conversations (including soft-deleted)
 export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
   const { data, error } = await supabase
     .from('conversations')
@@ -565,7 +576,6 @@ export const getAllConversationsForUser_Admin = async (userId: string): Promise<
   })) as Conversation[];
 };
 
-// Hard delete for admins only
 export const permanentDeleteConversation = async (id: string): Promise<void> => {
   const adminClient = getAdminClient();
   const { error } = await adminClient.from('conversations').delete().eq('id', id);
@@ -610,7 +620,7 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
       .eq('id', studentId);
     if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
 
-  } catch (error: any) {
+  } catch (error: any) => {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
