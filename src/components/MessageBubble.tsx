@@ -11,11 +11,9 @@ import { useAuth } from '../hooks/useAuth';
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
-  onSaveAsNote?: (content: string, title?: string) => Promise<void>;
+  onSaveAsNote?: (content: string) => void;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onRegenerateResponse?: (messageId: string) => void;
-  searchTerm?: string;
-  isHighlighted?: boolean;
 }
 
 const CodeBlock = React.memo(({ language, children }: { language: string; children: string; }) => {
@@ -34,7 +32,7 @@ const CodeBlock = React.memo(({ language, children }: { language: string; childr
         <button
           onClick={handleCopy}
           className="interactive-button p-1.5 bg-gray-800 rounded hover:bg-gray-700 text-gray-300"
-          title="Copy code"
+          title={'Copy code'}
         >
           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
         </button>
@@ -46,27 +44,16 @@ const CodeBlock = React.memo(({ language, children }: { language: string; childr
   );
 });
 
-// Function to highlight search terms in text
-const highlightSearchTerm = (text: string, searchTerm: string) => {
-  if (!searchTerm) return text;
-  
-  const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-  return text.replace(regex, '<mark style="background-color: #fbbf24; color: #000;">$1</mark>');
-};
-
 export function MessageBubble({
   message,
   isStreaming = false,
   onSaveAsNote,
-  searchTerm,
-  isHighlighted = false,
 }: MessageBubbleProps) {
   const { user } = useAuth();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const [flagged, setFlagged] = useState(false);
-  const [isNoteSaving, setIsNoteSaving] = useState(false);
   const copyTimeoutRef = useRef<NodeJS.Timeout>();
 
   const handleCopy = useCallback(() => {
@@ -76,27 +63,13 @@ export function MessageBubble({
     copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
   }, [message.content]);
   
-  const handleSaveNote = useCallback(async () => {
-    if (onSaveAsNote && !isNoteSaving) {
-      setIsNoteSaving(true);
-      try {
-        // Generate a title from the first line or first 50 characters
-        const title = message.content
-          .split('\n')[0]
-          .slice(0, 50)
-          .trim() + (message.content.length > 50 ? '...' : '');
-        
-        await onSaveAsNote(message.content, title);
-        setNoteSaved(true);
-        setTimeout(() => setNoteSaved(false), 2500);
-      } catch (error) {
-        console.error('Failed to save note:', error);
-        alert('Failed to save note. Please try again.');
-      } finally {
-        setIsNoteSaving(false);
-      }
+  const handleSaveNote = useCallback(() => {
+    if (onSaveAsNote) {
+      onSaveAsNote(message.content);
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 2500);
     }
-  }, [message.content, onSaveAsNote, isNoteSaving]);
+  }, [message.content, onSaveAsNote]);
 
   const handleExport = useCallback(() => {
     const blob = new Blob([message.content], { type: 'text/markdown;charset=utf-8' });
@@ -143,19 +116,8 @@ export function MessageBubble({
     },
   }), []);
 
-  // Enhanced content with search highlighting
-  const enhancedContent = useMemo(() => {
-    if (!searchTerm) return message.content;
-    return highlightSearchTerm(message.content, searchTerm);
-  }, [message.content, searchTerm]);
-
   return (
-    <div 
-      className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group ${
-        isHighlighted ? 'bg-yellow-100/10 rounded-lg p-2 -m-2' : ''
-      }`}
-      id={`message-${message.id}`}
-    >
+    <div className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group`}>
       {!isUser && (
         <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[var(--color-card)]">
           <Sparkles className="w-4 h-4 text-[var(--color-text-secondary)]" />
@@ -164,13 +126,9 @@ export function MessageBubble({
       
       <div className="message-bubble relative bg-[var(--color-card)] p-3 sm:p-4 rounded-xl">
         <div className="prose prose-invert prose-base max-w-none leading-relaxed">
-          {searchTerm ? (
-            <div dangerouslySetInnerHTML={{ __html: enhancedContent }} />
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content}
-            </ReactMarkdown>
-          )}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {message.content}
+          </ReactMarkdown>
           {isStreaming && <span className="inline-block w-2 h-2 ml-1 bg-white rounded-full animate-pulse" />}
         </div>
         
@@ -178,31 +136,13 @@ export function MessageBubble({
           <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="flex gap-1 p-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-sm">
               {!isUser && (
-                <button 
-                  onClick={handleSaveNote} 
-                  disabled={isNoteSaving}
-                  className={`btn-icon ${noteSaved ? 'text-blue-400' : ''} ${isNoteSaving ? 'opacity-50' : ''}`} 
-                  title={isNoteSaving ? 'Saving...' : 'Save as Note'}
-                >
-                  <Bookmark size={14} />
-                </button>
+                <button onClick={handleSaveNote} className={`btn-icon ${noteSaved ? 'text-blue-400' : ''}`} title="Save as Note"><Bookmark size={14} /></button>
               )}
-              <button onClick={handleCopy} className="btn-icon" title="Copy">
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </button>
+              <button onClick={handleCopy} className="btn-icon" title="Copy">{copied ? <Check size={14} /> : <Copy size={14} />}</button>
               {!isUser && (
-                <button onClick={handleExport} className="btn-icon" title="Export as Markdown">
-                  <Download size={14} />
-                </button>
+                <button onClick={handleExport} className="btn-icon" title="Export as Markdown"><Download size={14} /></button>
               )}
-              <button 
-                onClick={handleFlag} 
-                disabled={flagged} 
-                className={`btn-icon ${flagged ? 'text-yellow-400 cursor-not-allowed' : ''}`} 
-                title={flagged ? 'Flagged' : 'Flag for review'}
-              >
-                <Flag size={14} />
-              </button>
+              <button onClick={handleFlag} disabled={flagged} className={`btn-icon ${flagged ? 'text-yellow-400 cursor-not-allowed' : ''}`} title={flagged ? 'Flagged' : 'Flag for review'}><Flag size={14} /></button>
             </div>
           </div>
         )}
