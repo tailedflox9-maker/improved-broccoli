@@ -5,7 +5,8 @@ import { SettingsModal } from '../components/SettingsModal';
 import { QuizModal } from '../components/QuizModal';
 import { AdminPanelComponent } from '../components/AdminPanelComponent';
 import { TeacherDashboardComponent } from '../components/TeacherDashboardComponent';
-import { Conversation, Message, APISettings, Note, StudySession, QuizAssignmentWithDetails } from '../types';
+import { AssignmentView } from '../components/AssignmentView'; // <-- NEW IMPORT
+import { Conversation, Message, APISettings, Note, StudySession, QuizAssignmentWithDetails, StudentAssignmentDetails } from '../types'; // <-- NEW IMPORT
 import { generateId, generateConversationTitle } from '../utils/helpers';
 import { Menu } from 'lucide-react';
 import { storageUtils } from '../utils/storage';
@@ -17,13 +18,9 @@ export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   const [assignedQuizzes, setAssignedQuizzes] = useState<QuizAssignmentWithDetails[]>([]);
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+  const [studentAssignments, setStudentAssignments] = useState<StudentAssignmentDetails[]>([]); // <-- NEW STATE
+  const [currentAssignmentId, setCurrentAssignmentId] = useState<string | null>(null); // <-- NEW STATE
   const [settings, setSettings] = useState<APISettings>(() => storageUtils.getSettings());
   const [initialized, setInitialized] = useState(false);
   
@@ -54,6 +51,7 @@ export default function ChatPage() {
     if (profile?.role === 'admin') {
       setShowAdminPanel(prev => !prev);
       setShowTeacherDashboard(false);
+      setCurrentAssignmentId(null); // <-- NEW
       if (window.innerWidth < 1024) setSidebarOpen(false);
     }
   }, [profile]);
@@ -62,6 +60,7 @@ export default function ChatPage() {
       if (profile?.role === 'teacher') {
           setShowTeacherDashboard(prev => !prev);
           setShowAdminPanel(false);
+          setCurrentAssignmentId(null); // <-- NEW
           if (window.innerWidth < 1024) setSidebarOpen(false);
       }
   }, [profile]);
@@ -69,6 +68,7 @@ export default function ChatPage() {
   const handleSwitchToChatView = useCallback(() => {
       setShowAdminPanel(false);
       setShowTeacherDashboard(false);
+      setCurrentAssignmentId(null); // <-- NEW
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
@@ -111,6 +111,8 @@ export default function ChatPage() {
             if (profile.role === 'student') {
                 const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
                 setAssignedQuizzes(quizzes);
+                const assignments = await db.getAssignmentsForStudent(profile.id); // <-- NEW
+                setStudentAssignments(assignments); // <-- NEW
             }
         } catch (err) {
             console.error("Failed to fetch initial data:", err);
@@ -155,15 +157,17 @@ export default function ChatPage() {
     conversations.find(c => c.id === currentConversationId), 
     [conversations, currentConversationId]
   );
+  
+  const currentAssignment = useMemo(() => // <-- NEW
+    studentAssignments.find(a => a.id === currentAssignmentId),
+    [studentAssignments, currentAssignmentId]
+  );
 
   const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id);
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
   
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   const handleSelectAssignedQuiz = useCallback((assignment: QuizAssignmentWithDetails) => {
     if (assignment.completed_at) {
         alert(`You have already completed this quiz. Your score was ${assignment.score}/${assignment.total_questions}.`);
@@ -183,6 +187,21 @@ export default function ChatPage() {
     setCurrentQuizSession(session);
     setIsQuizModalOpen(true);
   }, []);
+
+  const handleSelectAssignment = useCallback((id: string) => { // <-- NEW
+    setCurrentAssignmentId(id);
+    setCurrentConversationId(null);
+    setShowAdminPanel(false);
+    setShowTeacherDashboard(false);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  }, []);
+
+  const handleAssignmentSubmitted = useCallback(async () => { // <-- NEW
+    if (profile?.role === 'student') {
+      const assignments = await db.getAssignmentsForStudent(profile.id);
+      setStudentAssignments(assignments);
+    }
+  }, [profile]);
   
   const handleFinishQuiz = useCallback(async (score: number, totalQuestions: number) => {
     if (currentQuizSession?.assignmentId) {
@@ -201,9 +220,6 @@ export default function ChatPage() {
     setCurrentQuizSession(null);
     setIsQuizModalOpen(false);
   }, [currentQuizSession, profile]);
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) {
@@ -372,6 +388,7 @@ export default function ChatPage() {
   const getActiveView = () => {
       if (showAdminPanel) return 'admin';
       if (showTeacherDashboard) return 'dashboard';
+      if (currentAssignmentId) return 'assignment'; // <-- NEW
       return 'chat';
   }
 
@@ -399,6 +416,25 @@ export default function ChatPage() {
     ); 
   }
 
+  const renderMainContent = () => {
+    if (showAdminPanel) return <AdminPanelComponent onClose={handleToggleAdminPanel} />;
+    if (showTeacherDashboard) return <TeacherDashboardComponent />;
+    if (currentAssignment) return <AssignmentView assignmentDetails={currentAssignment} onSubmitted={handleAssignmentSubmitted} />; // <-- NEW
+    return (
+      <ChatArea
+        conversation={currentConversation}
+        onSendMessage={handleSendMessage}
+        isLoading={isChatLoading}
+        isQuizLoading={isQuizLoading}
+        streamingMessage={streamingMessage}
+        hasApiKey={true}
+        onStopGenerating={() => { stopStreamingRef.current = true; }}
+        onSaveAsNote={() => {}}
+        onGenerateQuiz={handleGenerateQuiz}
+      />
+    );
+  };
+
   return (
     <div className="app-container">
       {sidebarOpen && window.innerWidth < 1024 && (
@@ -409,13 +445,16 @@ export default function ChatPage() {
         conversations={conversations}
         notes={[]}
         assignedQuizzes={assignedQuizzes}
+        assignments={studentAssignments} // <-- NEW PROP
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
         currentNoteId={null}
+        currentAssignmentId={currentAssignmentId} // <-- NEW PROP
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
         onSelectNote={() => {}}
         onSelectAssignedQuiz={handleSelectAssignedQuiz}
+        onSelectAssignment={handleSelectAssignment} // <-- NEW PROP
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
         onDeleteNote={() => {}}
@@ -443,23 +482,7 @@ export default function ChatPage() {
           </button>
         )}
         
-        {showAdminPanel ? (
-          <AdminPanelComponent onClose={handleToggleAdminPanel} />
-        ) : showTeacherDashboard ? (
-          <TeacherDashboardComponent />
-        ) : (
-          <ChatArea
-            conversation={currentConversation}
-            onSendMessage={handleSendMessage}
-            isLoading={isChatLoading}
-            isQuizLoading={isQuizLoading}
-            streamingMessage={streamingMessage}
-            hasApiKey={true}
-            onStopGenerating={() => { stopStreamingRef.current = true; }}
-            onSaveAsNote={() => {}}
-            onGenerateQuiz={handleGenerateQuiz}
-          />
-        )}
+        {renderMainContent()} 
       </div>
       
       <SettingsModal 
