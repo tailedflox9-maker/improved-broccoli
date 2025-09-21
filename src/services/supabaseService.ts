@@ -30,6 +30,25 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
   })) as Conversation[];
 };
 
+// Enhanced conversations fetch with pinned status
+export const getConversationsWithPinning = async (userId: string): Promise<Conversation[]> => {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_deleted', false)
+    .order('is_pinned', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+  
+  return data.map(conv => ({
+    ...conv,
+    created_at: new Date(conv.created_at),
+    updated_at: new Date(conv.updated_at),
+  })) as Conversation[];
+};
+
 export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
     console.log('Fetching messages for conversation ID:', conversationId); // Debug log
 
@@ -69,6 +88,60 @@ export const getConversationMessages = async (conversationId: string): Promise<M
         console.error('Error in getConversationMessages:', error);
         throw error;
     }
+};
+
+// Load messages with pagination
+export const getConversationMessagesWithPagination = async (
+  conversationId: string, 
+  limit: number = 20, 
+  offset: number = 0
+): Promise<Message[]> => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    console.error('Error fetching paginated messages:', error);
+    throw error;
+  }
+
+  if (!data) return [];
+
+  // Reverse to get chronological order (oldest first)
+  return data
+    .reverse()
+    .map(msg => ({
+      ...msg,
+      created_at: new Date(msg.created_at)
+    })) as Message[];
+};
+
+// Search messages within a conversation
+export const searchMessagesInConversation = async (
+  conversationId: string, 
+  searchTerm: string
+): Promise<Message[]> => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .ilike('content', `%${searchTerm}%`)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error searching messages:', error);
+    throw error;
+  }
+
+  if (!data) return [];
+
+  return data.map(msg => ({
+    ...msg,
+    created_at: new Date(msg.created_at)
+  })) as Message[];
 };
 
 // Admin-specific message fetching function
@@ -164,6 +237,38 @@ export const updateConversationTimestamp = async (id: string) => {
     if (error) throw error;
 };
 
+// Toggle conversation pin status
+export const toggleConversationPin = async (conversationId: string): Promise<boolean> => {
+  // First get current pin status
+  const { data: conversation, error: fetchError } = await supabase
+    .from('conversations')
+    .select('is_pinned')
+    .eq('id', conversationId)
+    .single();
+
+  if (fetchError) {
+    console.error('Error fetching conversation:', fetchError);
+    throw new Error('Failed to fetch conversation');
+  }
+
+  const newPinStatus = !conversation.is_pinned;
+
+  const { error: updateError } = await supabase
+    .from('conversations')
+    .update({ 
+      is_pinned: newPinStatus,
+      updated_at: new Date().toISOString() 
+    })
+    .eq('id', conversationId);
+
+  if (updateError) {
+    console.error('Error updating pin status:', updateError);
+    throw new Error('Failed to update pin status');
+  }
+
+  return newPinStatus;
+};
+
 // Soft delete for regular users
 export const deleteConversation = async (id: string) => {
   const { error } = await supabase
@@ -184,6 +289,42 @@ export const createNote = async (user_id: string, title: string, content: string
   const { data, error } = await supabase.from('notes').insert({ user_id, title, content, source_conversation_id }).select().single();
   if (error) throw error;
   return { ...data, created_at: new Date(data.created_at), updated_at: new Date(data.updated_at) } as Note;
+};
+
+// Enhanced note creation with better title handling
+export const createNoteFromMessage = async (
+  user_id: string, 
+  content: string, 
+  title?: string, 
+  source_conversation_id?: string
+): Promise<Note> => {
+  // Generate a better title if none provided
+  const finalTitle = title || content
+    .split('\n')[0]
+    .slice(0, 50)
+    .trim() + (content.length > 50 ? '...' : '') || 'Untitled Note';
+
+  const { data, error } = await supabase
+    .from('notes')
+    .insert({ 
+      user_id, 
+      title: finalTitle, 
+      content, 
+      source_conversation_id 
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error creating note:', error);
+    throw new Error('Failed to create note');
+  }
+  
+  return { 
+    ...data, 
+    created_at: new Date(data.created_at), 
+    updated_at: new Date(data.updated_at) 
+  } as Note;
 };
 
 export const deleteNote = async (id: string) => {
@@ -502,4 +643,74 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
   } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
+};
+
+// --- UTILITY FUNCTIONS FOR ERROR HANDLING & OPTIMIZATION ---
+
+// Retry mechanism for failed operations
+export const retryOperation = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  delay: number = 1000
+): Promise<T> => {
+  let lastError: Error;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Attempt ${attempt} failed:`, error);
+      
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, delay * attempt));
+      }
+    }
+  }
+  
+  throw new Error(`Operation failed after ${maxRetries} attempts. Last error: ${lastError.message}`);
+};
+
+// Optimistic update helper
+export const withOptimisticUpdate = async <T>(
+  optimisticUpdate: () => void,
+  actualOperation: () => Promise<T>,
+  rollback: () => void
+): Promise<T> => {
+  optimisticUpdate();
+  
+  try {
+    const result = await actualOperation();
+    return result;
+  } catch (error) {
+    rollback();
+    throw error;
+  }
+};
+
+// Enhanced error handling for common operations
+export const handleDatabaseError = (error: any, context: string): Error => {
+  console.error(`Database error in ${context}:`, error);
+  
+  if (error.code === 'PGRST116') {
+    return new Error('The requested item was not found');
+  }
+  
+  if (error.code === '23505') {
+    return new Error('This item already exists');
+  }
+  
+  if (error.code === '23503') {
+    return new Error('This operation would violate data integrity');
+  }
+  
+  if (error.message?.includes('JWT')) {
+    return new Error('Your session has expired. Please refresh and try again');
+  }
+  
+  if (error.message?.includes('network')) {
+    return new Error('Network error. Please check your connection and try again');
+  }
+  
+  return new Error(`Failed to ${context}: ${error.message || 'Unknown error'}`);
 };
