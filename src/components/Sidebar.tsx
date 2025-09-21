@@ -12,17 +12,11 @@ import {
   LogOut,
   LayoutDashboard,
   Shield,
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   ClipboardCheck,
   CheckCircle,
   Clock,
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 } from 'lucide-react';
-import { Conversation, Note, Profile, APISettings, QuizAssignmentWithDetails } from '../types';
+import { Conversation, Note, Profile, QuizAssignmentWithDetails } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
 import { formatDate } from '../utils/helpers';
@@ -30,26 +24,14 @@ import { formatDate } from '../utils/helpers';
 interface SidebarProps {
   conversations: Conversation[];
   notes: Note[];
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   assignedQuizzes: QuizAssignmentWithDetails[];
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
   activeView: 'chat' | 'note' | 'admin' | 'dashboard';
   currentConversationId: string | null;
   currentNoteId: string | null;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
   onSelectNote: (id: string | null) => void;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   onSelectAssignedQuiz: (quiz: QuizAssignmentWithDetails) => void;
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   onDeleteNote: (id: string) => void;
@@ -59,8 +41,6 @@ interface SidebarProps {
   isFolded?: boolean;
   onToggleFold?: () => void;
   userProfile: Profile | null;
-  settings: APISettings;
-  onModelChange: (model: any) => void;
   onToggleAdminPanel?: () => void;
   onToggleTeacherDashboard?: () => void;
   onSwitchToChatView: () => void;
@@ -327,13 +307,6 @@ export function Sidebar({
       </div>
 
       <div className="p-2 border-t border-[var(--color-border)] mt-auto space-y-2">
-        {!isFolded && userProfile && (
-          <div className="p-2 text-sm text-left">
-            <p className="font-semibold truncate">{userProfile.full_name || userProfile.email}</p>
-            <p className="text-xs text-gray-400 capitalize">{userProfile.role}</p>
-          </div>
-        )}
-        
         <div className="space-y-1">
           <button 
             onClick={onSwitchToChatView}
