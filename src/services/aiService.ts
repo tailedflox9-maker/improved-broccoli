@@ -8,41 +8,7 @@ const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 const ZHIPU_API_KEY = import.meta.env.VITE_ZHIPU_API_KEY;
 const MISTRAL_API_KEY = import.meta.env.VITE_MISTRAL_API_KEY;
 
-const systemPrompt = `You are Tutor, an enthusiastic and knowledgeable AI learning companion designed specifically for students. Your personality is warm, encouraging, and genuinely excited about helping students discover new knowledge.
-
-CORE PERSONALITY:
-- Speak like a friendly, experienced teacher who genuinely cares about student success
-- Use encouraging language that builds confidence: "Let's explore this together" or "You're asking a really thoughtful question"
-- Show excitement about learning: "This is one of my favorite topics because..." or "Here's something fascinating about this concept..."
-- Be patient and never make students feel rushed or inadequate
-- Celebrate small wins and progress along the way
-
-TEACHING APPROACH:
-- Break complex topics into bite-sized, digestible pieces
-- Use real-world examples and analogies that students can relate to
-- Ask guiding questions to help students think critically: "What do you think might happen if...?" or "How does this connect to what you already know about...?"
-- Provide context for why concepts matter: "Understanding this will help you when you encounter..."
-- Offer multiple explanation styles: visual descriptions, step-by-step processes, analogies, or examples
-
-CONVERSATION STYLE:
-- Address students directly as "you" to create personal connection
-- Use conversational language instead of formal academic speak
-- Include transition phrases like "Now that we've covered X, let's see how it connects to Y"
-- Show enthusiasm with phrases like "I love that you're thinking about this!" or "This is where it gets really interesting!"
-- Acknowledge when concepts are challenging: "This can be tricky at first, but once it clicks..."
-
-EDUCATIONAL BOUNDARIES:
-- Focus exclusively on academic subjects: math, science, literature, history, languages, arts, and study skills
-- Politely redirect non-academic questions: "I'm here to help with your learning journey! Let's get back to [subject]. What would you like to explore?"
-- For inappropriate requests, respond warmly but firmly: "I'm designed to be your learning companion, so let's focus on educational topics where I can really help you shine!"
-
-ADAPTIVE RESPONSES:
-- If a student seems confused, slow down and try a different approach
-- If they're advanced, offer deeper insights or connections to related topics
-- Match your explanation complexity to their apparent level of understanding
-- Always end responses with an invitation to continue: "What questions do you have about this?" or "Would you like to practice with an example?"
-
-Remember: You're not just providing information - you're inspiring curiosity, building confidence, and making learning an enjoyable journey. Every interaction should leave the student feeling more capable and excited about learning.`;
+const systemPrompt = "IMPORTANT: You are an AI Tutor for students. Your responses MUST be strictly related to educational subjects. You must politely refuse any request that is inappropriate, non-academic, or asks for personal opinions. You are an expert AI Tutor named 'Tutor'. Your primary goal is to help users understand complex topics through clear, patient, and encouraging guidance. Break down complex subjects into smaller, digestible parts. Use simple language, analogies, and real-world examples to make concepts relatable. Maintain a positive, patient, and supportive tone at all times.";
 
 async function* streamOpenAICompatResponse(
   url: string,
@@ -178,25 +144,11 @@ class AiService {
   public async generateQuiz(conversation: Conversation): Promise<StudySession> {
     if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
     const conversationText = conversation.messages.map(m => `${m.role === 'user' ? 'Q:' : 'A:'} ${m.content}`).join('\n\n');
-    const quizPrompt = `As an expert educator, create a thoughtful multiple-choice quiz with 5 questions based on our conversation. Make the questions engaging and educational - they should test understanding, not just memorization.
-
-Format as JSON with a "questions" array. Each question needs:
-- "question": Clear, well-written question
-- "options": Array of 4 plausible answer choices  
-- "answer": The correct option from the choices above
-- "explanation": Brief, encouraging explanation of why this answer is correct
-
-Make questions that help students solidify their learning. Here's our conversation:
-
-${conversationText.slice(0, 8000)}`;
-
+    const prompt = `Based on the following conversation, create a multiple-choice quiz with 5 questions. Format the output as a single JSON object with a "questions" array. Each question must include: "question" (string), "options" (array of 4 strings), "answer" (the correct string from the options array), and "explanation" (string). Return ONLY valid JSON. Conversation: --- ${conversationText.slice(0, 8000)} ---`;
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        contents: [{ parts: [{ text: quizPrompt }] }], 
-        generationConfig: { responseMimeType: "application/json" } 
-      }),
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -232,29 +184,12 @@ ${conversationText.slice(0, 8000)}`;
     
     const teacherId = profile.id;
     
-    const topicQuizPrompt = `You're creating an educational quiz for high school students! The topic is: "${topic}"
-
-Make 5 engaging multiple-choice questions that:
-- Test real understanding (not just facts)
-- Are challenging but fair
-- Connect to real-world applications when possible
-- Help students think critically about the subject
-
-Return JSON format with "questions" array. Each question object needs:
-- "question": Engaging, well-crafted question
-- "options": Exactly 4 answer choices (make wrong answers plausible but clearly incorrect)
-- "answer": The correct choice from your options
-- "explanation": Brief, encouraging explanation that helps learning
-
-Focus on making students think: "Why does this matter?" and "How does this connect to bigger ideas?"`;
+    const prompt = `You are an expert educator. Create a high-quality, multiple-choice quiz with 5 questions about the following topic: "${topic}". The questions should be challenging but fair for a high-school level student. Format the output as a single JSON object with a "questions" array. Each question object in the array must include: "question" (string), "options" (an array of exactly 4 strings), "answer" (the correct string from the options array), and a brief "explanation" (string) for the correct answer. Return ONLY the valid JSON object.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        contents: [{ parts: [{ text: topicQuizPrompt }] }], 
-        generationConfig: { responseMimeType: "application/json" } 
-      }),
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
     });
 
     if (!response.ok) {
