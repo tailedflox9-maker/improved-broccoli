@@ -1,7 +1,7 @@
 import { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { supabase } from '../supabase';
 import { getProfile } from '../services/supabaseService';
-import { Profile } from '../types';
+import { Profile, Role } from '../types';
 import { Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -19,6 +19,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  // Helper function to safely get user role with proper fallback
+  const getUserRole = (user: any, existingProfile?: Profile | null): Role => {
+    // Priority 1: Use existing profile role if available (prevents role switching)
+    if (existingProfile?.role) {
+      console.log('Using existing profile role:', existingProfile.role);
+      return existingProfile.role;
+    }
+
+    // Priority 2: Use user metadata role
+    if (user?.user_metadata?.role) {
+      console.log('Using user metadata role:', user.user_metadata.role);
+      return user.user_metadata.role;
+    }
+
+    // Priority 3: Determine role based on email domain or other heuristics
+    const email = user?.email || '';
+    
+    // Check if email suggests teacher/admin role
+    if (email.includes('teacher') || email.includes('admin') || email.includes('edu')) {
+      console.log('Email suggests teacher role, using teacher as fallback');
+      return 'teacher';
+    }
+
+    // Priority 4: Final fallback to student (but log this as it might indicate an issue)
+    console.warn('No role information available, defaulting to student. This might indicate a data issue.');
+    return 'student';
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -68,18 +96,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 console.warn('Profile loading failed, creating fallback:', profileError.message);
                 
                 if (isMounted) {
-                  // Create a robust fallback profile
+                  // Create a robust fallback profile with proper role handling
                   const fallbackProfile: Profile = {
                     id: currentSession.user.id,
                     email: currentSession.user.email || 'unknown@example.com',
                     full_name: currentSession.user.user_metadata?.full_name || 'User',
-                    role: currentSession.user.user_metadata?.role || 'student',
+                    role: getUserRole(currentSession.user, profile), // FIXED: Use smart role detection
                     teacher_id: currentSession.user.user_metadata?.teacher_id || null
                   };
                   
                   setProfile(fallbackProfile);
                   setError(null); // Don't treat fallback as an error
-                  console.log('Using fallback profile - app will continue working');
+                  console.log('Using fallback profile with role:', fallbackProfile.role, '- app will continue working');
                 }
               }
             } else {
@@ -107,7 +135,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 id: session.user.id,
                 email: session.user.email || 'user@example.com',
                 full_name: 'User',
-                role: 'student',
+                role: getUserRole(session.user, profile), // FIXED: Use smart role detection
                 teacher_id: null
               };
               setProfile(basicProfile);
@@ -193,20 +221,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           } catch (profileError: any) {
             console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
             
-            // Only create a fallback profile if one doesn't already exist.
-            // This prevents a valid profile from being overwritten by a temporary network error.
+            // CRITICAL FIX: Only create a fallback profile if one doesn't already exist
+            // AND preserve existing role if we have one
             if (isMounted && !profile) {
               const fallbackProfile: Profile = {
                 id: newSession.user.id,
                 email: newSession.user.email || 'unknown@example.com',
                 full_name: newSession.user.user_metadata?.full_name || 'User',
-                role: newSession.user.user_metadata?.role || 'student',
+                role: getUserRole(newSession.user, profile), // FIXED: Use smart role detection
                 teacher_id: newSession.user.user_metadata?.teacher_id || null
               };
               setProfile(fallbackProfile);
-              console.log('Using fallback profile as no profile was present.');
+              console.log('Using fallback profile with role:', fallbackProfile.role, 'as no profile was present.');
             } else if (isMounted) {
-              console.log('An existing profile is already loaded; not overwriting due to a refresh error.');
+              console.log('An existing profile is already loaded; not overwriting due to a refresh error. Current role:', profile?.role);
             }
           }
         }
