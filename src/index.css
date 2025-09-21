@@ -106,7 +106,8 @@
   @media (max-width: 768px) { .chat-messages { padding: 0.5rem; } }
 
   /* --- MESSAGE BUBBLES --- */
-  .message-wrapper { animation: messageSlideIn 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); will-change: transform, opacity; }
+  .message-wrapper { will-change: transform, opacity; }
+  .message-wrapper:not(.is-streaming) { animation: messageSlideIn 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); }
   .message-bubble { transition: all 0.2s ease-out; transform: translateZ(0); max-width: 85%; word-wrap: break-word; overflow-wrap: break-word; }
   @media (max-width: 768px) { .message-bubble { max-width: 95%; } }
   .message-bubble:hover { transform: translateY(-1px) translateZ(0); }
