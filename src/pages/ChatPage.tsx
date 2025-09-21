@@ -1,3 +1,6 @@
+================================================
+FILE: src/pages/ChatPage.tsx
+================================================
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { ChatArea } from '../components/ChatArea';
@@ -450,9 +453,25 @@ export default function ChatPage() {
 
   if (!initialized) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
-        <p>Loading your learning space...</p>
-      </div>
+        <div className="flex h-screen w-screen items-center justify-center bg-grid-slate-900 text-white p-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-transparent to-black/50" />
+            <div className="relative z-10 text-center max-w-sm w-full animate-fade-in-up">
+                <img
+                    src="/white-logo.png"
+                    alt="AI Tutor Logo"
+                    className="w-24 h-24 mx-auto mb-6 pulse-subtle"
+                />
+                <h1 className="text-3xl font-bold text-white mb-2">
+                    Loading your learning space...
+                </h1>
+                <p className="text-gray-400 mb-8">
+                    Getting your conversations and notes ready.
+                </p>
+                <div className="w-full bg-black/20 border border-white/10 rounded-full h-2.5 overflow-hidden backdrop-blur-sm">
+                    <div className="animate-shimmer h-2.5" />
+                </div>
+            </div>
+        </div>
     );
   }
 
