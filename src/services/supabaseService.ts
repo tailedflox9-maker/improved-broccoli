@@ -4,16 +4,13 @@ import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQu
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
   const { data, error } = await supabase.rpc('get_my_profile');
-
   if (error) {
     console.error("Error calling get_my_profile RPC:", error);
     throw new Error("Could not fetch user profile from the database.");
   }
-
   if (!data || data.length === 0) {
     throw new Error("User profile not found in the database.");
   }
-
   return data[0] as Profile;
 };
 
@@ -35,38 +32,38 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
 
 export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
     console.log('Fetching messages for conversation ID:', conversationId); // Debug log
-    
+
     if (!conversationId || conversationId.trim() === '') {
         console.error('Invalid conversation ID provided:', conversationId);
         throw new Error('Conversation ID is required');
     }
-    
+
     try {
         const { data, error } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-            
+
         if (error) {
             console.error('Supabase error fetching messages:', error);
             throw error;
         }
-        
+
         console.log('Raw message data from database:', data); // Debug log
-        
+
         if (!data) {
             console.log('No data returned from query');
             return [];
         }
-        
+
         const messages = data.map(msg => ({
             ...msg,
             created_at: new Date(msg.created_at)
         })) as Message[];
-        
+
         console.log('Processed messages:', messages); // Debug log
-        
+
         return messages;
     } catch (error) {
         console.error('Error in getConversationMessages:', error);
@@ -77,12 +74,12 @@ export const getConversationMessages = async (conversationId: string): Promise<M
 // Admin-specific message fetching function
 export const getConversationMessages_Admin = async (conversationId: string): Promise<Message[]> => {
     console.log('Admin: Fetching messages for conversation ID:', conversationId);
-    
+
     if (!conversationId || conversationId.trim() === '') {
         console.error('Invalid conversation ID provided:', conversationId);
         throw new Error('Conversation ID is required');
     }
-    
+
     try {
         // Try with admin client first
         const adminClient = getAdminClient();
@@ -91,7 +88,7 @@ export const getConversationMessages_Admin = async (conversationId: string): Pro
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-            
+
         if (!adminError && adminData) {
             console.log('Admin client successful, found messages:', adminData.length);
             return adminData.map(msg => ({
@@ -99,32 +96,32 @@ export const getConversationMessages_Admin = async (conversationId: string): Pro
                 created_at: new Date(msg.created_at)
             })) as Message[];
         }
-        
+
         console.log('Admin client failed, trying regular client:', adminError);
-        
+
         // Fallback to regular client
         const { data, error } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-            
+
         if (error) {
             console.error('Both admin and regular client failed:', error);
             throw error;
         }
-        
+
         console.log('Regular client result:', data?.length || 0, 'messages');
-        
+
         if (!data) {
             return [];
         }
-        
+
         return data.map(msg => ({
             ...msg,
             created_at: new Date(msg.created_at)
         })) as Message[];
-        
+
     } catch (error) {
         console.error('Error in getConversationMessages_Admin:', error);
         throw error;
@@ -201,9 +198,6 @@ export const createQuiz = async (user_id: string, conversation_id: string, score
   return data as Quiz;
 };
 
-// =================================================================
-// == START OF CHANGES
-// =================================================================
 export const createGeneratedQuiz = async (quizData: Omit<GeneratedQuiz, 'id' | 'created_at'>): Promise<GeneratedQuiz> => {
   const { data, error } = await supabase
     .from('generated_quizzes')
@@ -264,10 +258,77 @@ export const markQuizAsCompleted = async (assignmentId: string, score: number, t
     .eq('id', assignmentId);
   if (error) throw error;
 };
-// =================================================================
-// == END OF CHANGES
-// =================================================================
 
+// Function to delete a generated quiz
+export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
+  try {
+    // First check if there are any assignments for this quiz
+    const { data: assignments, error: checkError } = await supabase
+      .from('quiz_assignments')
+      .select('id')
+      .eq('quiz_id', quizId)
+      .limit(1);
+
+    if (checkError) throw checkError;
+
+    if (assignments && assignments.length > 0) {
+      throw new Error('Cannot delete quiz that has been assigned to students. Please remove assignments first.');
+    }
+
+    // Delete the quiz if no assignments exist
+    const { error } = await supabase
+      .from('generated_quizzes')
+      .delete()
+      .eq('id', quizId);
+
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error deleting quiz:', error);
+    throw error;
+  }
+};
+
+// Function to get quiz assignments with completion details for a teacher
+export const getQuizAssignmentDetails = async (teacherId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('quiz_assignments')
+      .select(`
+        id,
+        due_at,
+        completed_at,
+        score,
+        total_questions,
+        generated_quizzes!inner(id, topic, questions),
+        profiles!quiz_assignments_student_id_fkey(id, full_name, email)
+      `)
+      .eq('teacher_id', teacherId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error fetching quiz assignment details:', error);
+    throw error;
+  }
+};
+
+// Function to unassign a quiz from students
+export const unassignQuizFromStudents = async (quizId: string, studentIds: string[]): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('quiz_assignments')
+      .delete()
+      .eq('quiz_id', quizId)
+      .in('student_id', studentIds)
+      .is('completed_at', null); // Only unassign if not completed
+
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error unassigning quiz:', error);
+    throw error;
+  }
+};
 
 // --- SAFETY ---
 export const flagMessage = async (flaggedMessage: any) => {
@@ -294,16 +355,70 @@ export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<F
     return data as FlaggedMessage[];
 };
 
+// Improved student stats function that includes quiz assignment data
+export const getStudentStatsImproved = async (studentId: string) => {
+  try {
+    // Count conversations (questions asked)
+    const { count: questionCount, error: convError } = await supabase
+      .from('conversations')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', studentId)
+      .eq('is_deleted', false);
+
+    if (convError) throw convError;
+
+    // Get completed quiz assignments (more accurate than old quiz table)
+    const { data: completedAssignments, error: assignmentError } = await supabase
+      .from('quiz_assignments')
+      .select('score, total_questions')
+      .eq('student_id', studentId)
+      .not('completed_at', 'is', null);
+
+    if (assignmentError) throw assignmentError;
+
+    // Fallback to old quiz table for backward compatibility
+    const { data: oldQuizzes, error: oldQuizError } = await supabase
+      .from('quizzes')
+      .select('score, total_questions')
+      .eq('user_id', studentId);
+
+    if (oldQuizError) throw oldQuizError;
+
+    // Combine both sources
+    const allQuizzes = [
+      ...(completedAssignments || []),
+      ...(oldQuizzes || [])
+    ];
+
+    const quizAttempts = allQuizzes.length;
+    let averageScore = 0;
+
+    if (quizAttempts > 0) {
+      const totalScore = allQuizzes.reduce((acc, quiz) => {
+        const percentage = (quiz.score / quiz.total_questions) * 100;
+        return acc + percentage;
+      }, 0);
+      averageScore = totalScore / quizAttempts;
+    }
+
+    return {
+      questionCount: questionCount ?? 0,
+      quizAttempts,
+      averageScore: Math.round(averageScore * 10) / 10 // Round to 1 decimal
+    };
+  } catch (error) {
+    console.error('Error fetching improved student stats:', error);
+    throw error;
+  }
+};
+
 export const getStudentStats = async (studentId: string) => {
   const { count: questionCount, error: convError } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', studentId);
   if (convError) throw convError;
-
   const { data: quizzes, error: quizError } = await supabase.from('quizzes').select('score, total_questions').eq('user_id', studentId);
   if (quizError) throw quizError;
-
   const quizAttempts = quizzes ? quizzes.length : 0;
   const averageScore = quizAttempts > 0 ? (quizzes.reduce((acc, q) => acc + (q.score / q.total_questions), 0) / quizAttempts) * 100 : 0;
-
   return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
@@ -352,7 +467,6 @@ export const createUser = async (userData: { email: string; password: string; fu
     if (!userData.password?.trim() || userData.password.length < 6) throw new Error('Password must be at least 6 characters long');
     if (!userData.full_name?.trim()) throw new Error('Full name is required');
     if (!['student', 'teacher'].includes(userData.role)) throw new Error('Role must be either student or teacher');
-
     const adminClient = getAdminClient();
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: userData.email.trim(),
@@ -360,14 +474,14 @@ export const createUser = async (userData: { email: string; password: string; fu
       email_confirm: true,
       user_metadata: { full_name: userData.full_name.trim(), role: userData.role }
     });
-    
+
     if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
     if (!authData.user) throw new Error('User creation succeeded but no user data returned');
-    
+
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     return authData.user;
-    
+
   } catch (error: any) {
     if (error.message?.includes('already registered')) throw new Error('A user with this email address already exists');
     throw new Error(error.message || 'Failed to create user');
@@ -378,15 +492,13 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
   try {
     if (!teacherId?.trim() || !studentId?.trim()) throw new Error('Teacher and Student IDs are required.');
     if (teacherId === studentId) throw new Error('A user cannot be assigned to themselves.');
-
     const adminClient = getAdminClient();
     const { error } = await adminClient
       .from('profiles')
       .update({ teacher_id: teacherId })
       .eq('id', studentId);
-
     if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
-    
+
   } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
