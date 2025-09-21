@@ -62,7 +62,7 @@ class AiService {
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         const googlePayload = {
           contents: userMessages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
           systemInstruction: { parts: [{ text: systemPrompt }] }
@@ -161,10 +161,9 @@ class AiService {
     return { id: generateId(), conversationId: conversation.id, questions, currentQuestionIndex: 0, score: 0, totalQuestions: questions.length, isCompleted: false, createdAt: new Date() };
   }
 
-  public async generateQuizFromTopic(topic: string): Promise<GeneratedQuiz> {
+  public async generateQuizFromTopic(topic: string, numQuestions: number = 5, difficulty: string = 'Medium'): Promise<GeneratedQuiz> {
     if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
     
-    // Get the current user's profile to extract the teacher_id
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
     
@@ -174,17 +173,12 @@ class AiService {
       .eq('id', user.id)
       .single();
       
-    if (profileError || !profile) {
-      throw new Error('Could not retrieve user profile');
-    }
-    
-    if (profile.role !== 'teacher') {
-      throw new Error('Only teachers can generate quizzes');
-    }
+    if (profileError || !profile) throw new Error('Could not retrieve user profile');
+    if (profile.role !== 'teacher') throw new Error('Only teachers can generate quizzes');
     
     const teacherId = profile.id;
     
-    const prompt = `You are an expert educator. Create a high-quality, multiple-choice quiz with 5 questions about the following topic: "${topic}". The questions should be challenging but fair for a high-school level student. Format the output as a single JSON object with a "questions" array. Each question object in the array must include: "question" (string), "options" (an array of exactly 4 strings), "answer" (the correct string from the options array), and a brief "explanation" (string) for the correct answer. Return ONLY the valid JSON object.`;
+    const prompt = `You are an expert educator. Create a high-quality, multiple-choice quiz with ${numQuestions} questions about the following topic: "${topic}". The questions should be of ${difficulty} difficulty for a high-school level student. Format the output as a single JSON object with a "questions" array. Each question object in the array must include: "question" (string), "options" (an array of exactly 4 strings), "answer" (the correct string from the options array), and a brief "explanation" (string) for the correct answer. Return ONLY the valid JSON object.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
@@ -202,7 +196,6 @@ class AiService {
     
     const questions = await this.parseQuizResponse(textResponse);
 
-    // Save the generated quiz to the database
     const newQuizData = { teacher_id: teacherId, topic, questions };
     const savedQuiz = await db.createGeneratedQuiz(newQuizData);
 
