@@ -174,17 +174,76 @@ export const flagMessage = async (flaggedMessage: any) => {
 };
 
 // --- TEACHER DASHBOARD ---
+
+// =================================================================
+// == START OF CHANGES
+// =================================================================
+
+// FIX: Replaced RPC with a direct query to avoid "structure does not match" error.
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  const { data, error } = await supabase.rpc('get_students_for_teacher', { teacher_id_param: teacherId });
-  if (error) throw error;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('teacher_id', teacherId);
+
+  if (error) {
+    console.error('Error fetching students for teacher:', error);
+    throw error;
+  }
   return data as Profile[];
 };
 
+// FIX: Replaced RPC with a more robust direct query to avoid "structure does not match" error.
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
-    if (error) throw error;
-    return data as FlaggedMessage[];
+    // First, get the IDs of the students assigned to this teacher
+    const { data: students, error: studentsError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('teacher_id', teacherId);
+
+    if (studentsError) {
+        console.error('Error fetching student IDs for teacher:', studentsError);
+        throw studentsError;
+    }
+
+    if (!students || students.length === 0) {
+        return []; // Teacher has no students, so no flagged messages
+    }
+
+    const studentIds = students.map(s => s.id);
+
+    // Now, fetch flagged messages from those students and join the student's name
+    const { data, error } = await supabase
+        .from('flagged_messages')
+        .select(`
+            id,
+            message_content,
+            student_id,
+            created_at,
+            profiles (
+                full_name
+            )
+        `)
+        .in('student_id', studentIds)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching flagged messages:', error);
+        throw error;
+    }
+    
+    // The result is nested. We need to flatten it to match the FlaggedMessage type.
+    return data.map((msg: any) => ({
+        id: msg.id,
+        message_content: msg.message_content,
+        student_id: msg.student_id,
+        student_name: msg.profiles?.full_name || 'Unknown Student',
+        created_at: msg.created_at,
+    }));
 };
+// =================================================================
+// == END OF CHANGES
+// =================================================================
 
 export const getStudentStatsImproved = async (studentId: string) => {
   try {
