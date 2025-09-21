@@ -55,21 +55,53 @@ export function ChatArea({
   if (showWelcomeScreen) {
     return (
       <div className="chat-area">
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center max-w-md w-full px-4 animate-fade-in-up">
-            <img
-              src="/white-logo.png"
-              alt="AI Tutor Logo"
-              className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-4 sm:mb-6"
-            />
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[var(--color-text-primary)] mb-2 sm:mb-4">
+        <div className="flex-1 flex items-center justify-center p-4 relative">
+          {/* Enhanced background with subtle animation */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="h-full w-full bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-cyan-500/10" />
+          </div>
+          
+          <div className="text-center max-w-lg w-full px-4 animate-fade-in-up relative z-10">
+            <div className="relative mb-8">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-full blur-xl animate-pulse" />
+              <img
+                src="/white-logo.png"
+                alt="AI Tutor Logo"
+                className="w-24 h-24 sm:w-28 sm:h-28 mx-auto relative z-10 drop-shadow-xl"
+              />
+            </div>
+            
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-white via-blue-100 to-purple-100 bg-clip-text text-transparent mb-4 leading-tight">
               AI Tutor
             </h2>
-            <p className="text-sm sm:text-base text-[var(--color-text-secondary)] opacity-80">
-              Start a conversation to begin learning
-            </p>
+            
+            <div className="space-y-3 text-gray-300 mb-8">
+              <p className="text-lg sm:text-xl font-medium">
+                Your intelligent learning companion
+              </p>
+              <p className="text-sm sm:text-base opacity-75 max-w-md mx-auto">
+                Ask questions, explore topics, and get personalized explanations tailored to your learning style
+              </p>
+            </div>
+            
+            {/* Feature highlights */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 text-xs sm:text-sm">
+              <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="w-2 h-2 bg-blue-400 rounded-full" />
+                <span>Instant Answers</span>
+              </div>
+              <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="w-2 h-2 bg-purple-400 rounded-full" />
+                <span>Interactive Quizzes</span>
+              </div>
+              <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="w-2 h-2 bg-cyan-400 rounded-full" />
+                <span>Personalized Learning</span>
+              </div>
+            </div>
           </div>
         </div>
+        
         <div className="chat-input-container">
           <ChatInput
             onSendMessage={onSendMessage}
@@ -92,8 +124,8 @@ export function ChatArea({
         className="chat-messages scroll-container"
       >
         <div className="chat-messages-container">
-          <div className="space-y-4 sm:space-y-6 py-4 sm:py-6">
-            {allMessages.map((message) => (
+          <div className="space-y-6 sm:space-y-8 py-6 sm:py-8">
+            {allMessages.map((message, index) => (
               <MessageBubble
                 key={message.id}
                 message={message}
@@ -101,8 +133,25 @@ export function ChatArea({
                 onSaveAsNote={onSaveAsNote}
                 onEditMessage={onEditMessage}
                 onRegenerateResponse={onRegenerateResponse}
+                isFirst={index === 0}
               />
             ))}
+            
+            {/* Typing indicator */}
+            {isLoading && streamingMessage && (
+              <div className="flex items-end gap-3 sm:gap-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-white/10">
+                  <div className="w-3 h-3 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full animate-pulse" />
+                </div>
+                <div className="bg-gradient-to-br from-[var(--color-card)] to-[var(--color-card)]/80 backdrop-blur-sm border border-white/10 p-4 rounded-2xl rounded-bl-md shadow-xl">
+                  <div className="flex items-center gap-1">
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div ref={messagesEndRef} className="h-1 flex-shrink-0" />
         </div>
