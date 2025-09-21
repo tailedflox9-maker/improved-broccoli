@@ -153,7 +153,7 @@ export function MessageBubble({
     <div 
       className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group ${
         isHighlighted ? 'bg-yellow-100/10 rounded-lg p-2 -m-2' : ''
-      }`}
+      } ${isStreaming ? 'is-streaming' : ''}`}
       id={`message-${message.id}`}
     >
       {!isUser && (
