@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, Assignment, StudentAssignment, StudentAssignmentDetails } from '../types';
 
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
@@ -329,6 +329,117 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
     throw error;
   }
 };
+
+// =================================================================
+// == START OF CHANGES
+// =================================================================
+// --- ASSIGNMENTS ---
+export const createAssignment = async (
+  assignment: Omit<Assignment, 'id' | 'created_at'>,
+  studentIds: string[]
+): Promise<Assignment> => {
+  // 1. Create the main assignment entry
+  const { data: newAssignment, error: assignmentError } = await supabase
+    .from('assignments')
+    .insert(assignment)
+    .select()
+    .single();
+  if (assignmentError) throw assignmentError;
+
+  // 2. Create student_assignment entries for each student
+  const studentAssignments = studentIds.map(student_id => ({
+    assignment_id: newAssignment.id,
+    student_id: student_id,
+    status: 'pending' as const,
+  }));
+  const { error: studentAssignmentError } = await supabase
+    .from('student_assignments')
+    .insert(studentAssignments);
+  if (studentAssignmentError) {
+    // Rollback the assignment creation if student assignments fail
+    await supabase.from('assignments').delete().eq('id', newAssignment.id);
+    throw studentAssignmentError;
+  }
+
+  return newAssignment as Assignment;
+};
+
+export const getAssignmentsForTeacher = async (teacherId: string): Promise<Assignment[]> => {
+  const { data, error } = await supabase
+    .from('assignments')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as Assignment[];
+};
+
+export const getAssignmentsForStudent = async (studentId: string): Promise<StudentAssignmentDetails[]> => {
+  const { data, error } = await supabase
+    .from('student_assignments')
+    .select(`
+      *,
+      assignments (
+        title,
+        description,
+        due_at
+      )
+    `)
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: false, foreignTable: 'assignments' });
+  if (error) throw error;
+  return data as StudentAssignmentDetails[];
+};
+
+export const getSubmissionsForAssignment = async (assignmentId: string): Promise<StudentAssignmentDetails[]> => {
+  const { data, error } = await supabase
+    .from('student_assignments')
+    .select(`
+      *,
+      profiles (
+        full_name,
+        email
+      )
+    `)
+    .eq('assignment_id', assignmentId)
+    .order('submitted_at', { ascending: true });
+  if (error) throw error;
+  return data as StudentAssignmentDetails[];
+};
+
+export const submitAssignment = async (studentAssignmentId: string, submissionContent: string): Promise<StudentAssignment> => {
+  const { data, error } = await supabase
+    .from('student_assignments')
+    .update({
+      submission_content: submissionContent,
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+    })
+    .eq('id', studentAssignmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as StudentAssignment;
+};
+
+export const gradeAssignment = async (studentAssignmentId: string, feedback: string, grade: number): Promise<StudentAssignment> => {
+    const { data, error } = await supabase
+      .from('student_assignments')
+      .update({
+        feedback,
+        grade,
+        status: 'graded',
+      })
+      .eq('id', studentAssignmentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as StudentAssignment;
+};
+// =================================================================
+// == END OF CHANGES
+// =================================================================
+
 
 // --- SAFETY ---
 export const flagMessage = async (flaggedMessage: any) => {
