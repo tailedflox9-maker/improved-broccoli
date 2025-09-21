@@ -12,13 +12,13 @@
   "categories": ["education", "productivity"],
   "icons": [
     {
-      "src": "/white-logo.png",
+      "src": "/black-logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable any"
     },
     {
-      "src": "/white-logo.png",
+      "src": "/black-logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable any"
