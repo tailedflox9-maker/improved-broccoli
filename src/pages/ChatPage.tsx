@@ -1,6 +1,3 @@
-================================================
-FILE: src/pages/ChatPage.tsx
-================================================
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { ChatArea } from '../components/ChatArea';
