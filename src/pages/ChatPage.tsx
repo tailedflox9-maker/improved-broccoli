@@ -198,21 +198,41 @@ export default function ChatPage() {
   }, []);
   
   const handleFinishQuiz = useCallback(async (score: number, totalQuestions: number) => {
-    if (currentQuizSession?.assignmentId) {
-        try {
-            await db.markQuizAsCompleted(currentQuizSession.assignmentId, score, totalQuestions);
-            // Refetch quizzes to update status
-            if (profile) {
-                const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
-                setAssignedQuizzes(quizzes);
-            }
-        } catch (err) {
-            console.error("Failed to mark quiz as completed:", err);
-            alert("There was an error saving your quiz result.");
-        }
+    // Ensure we have a profile and a quiz session before proceeding
+    if (!profile || !currentQuizSession) {
+        setIsQuizModalOpen(false);
+        setCurrentQuizSession(null);
+        return;
     }
-    setCurrentQuizSession(null);
-    setIsQuizModalOpen(false);
+
+    try {
+        // Case 1: The quiz is an assignment from a teacher.
+        // We need to update the assignment record in the database.
+        if (currentQuizSession.assignmentId) {
+            await db.markQuizAsCompleted(currentQuizSession.assignmentId, score, totalQuestions);
+            
+            // After completing, refetch the list of assignments to update its status in the UI.
+            const updatedQuizzes = await db.getAssignedQuizzesForStudent(profile.id);
+            setAssignedQuizzes(updatedQuizzes);
+            
+            // Notify the student their assignment was submitted.
+            alert(`Assignment submitted successfully! Your score: ${score}/${totalQuestions}`);
+        } 
+        // Case 2: The quiz was generated from a conversation for self-study.
+        // We save this to the 'quizzes' table for personal progress tracking.
+        else if (currentQuizSession.conversationId) {
+            await db.createQuiz(profile.id, currentQuizSession.conversationId, score, totalQuestions);
+            console.log(`Self-study quiz result saved. Score: ${score}/${totalQuestions}`);
+        }
+    } catch (err) {
+        console.error("Failed to save quiz result:", err);
+        alert("There was an error saving your quiz result. Please try again.");
+    } finally {
+        // This block ensures the modal always closes and the session is cleared,
+        // regardless of whether the database operations succeeded or failed.
+        setIsQuizModalOpen(false);
+        setCurrentQuizSession(null);
+    }
   }, [currentQuizSession, profile]);
 
   // NEW: Handle saving message as note
@@ -417,7 +437,7 @@ export default function ChatPage() {
   const getActiveView = () => {
       if (showAdminPanel) return 'admin';
       if (showTeacherDashboard) return 'dashboard';
-      if (currentNoteId) return 'notes';
+      if (currentNoteId) return 'note';
       return 'chat';
   }
 
