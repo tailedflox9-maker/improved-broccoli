@@ -17,13 +17,8 @@ export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
+  const [notes, setNotes] = useState<Note[]>([]);
   const [assignedQuizzes, setAssignedQuizzes] = useState<QuizAssignmentWithDetails[]>([]);
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
   const [settings, setSettings] = useState<APISettings>(() => storageUtils.getSettings());
   const [initialized, setInitialized] = useState(false);
   
@@ -100,8 +95,14 @@ export default function ChatPage() {
     
     const fetchInitialData = async () => {
         try {
-            const userConversations = await db.getConversations(profile.id);
+            const [userConversations, userNotes] = await Promise.all([
+                db.getConversations(profile.id),
+                db.getNotes(profile.id)
+            ]);
+            
             setConversations(userConversations);
+            setNotes(userNotes);
+            
             if (userConversations.length > 0) {
                 setCurrentConversationId(userConversations[0].id);
             } else {
@@ -161,9 +162,6 @@ export default function ChatPage() {
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
   
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   const handleSelectAssignedQuiz = useCallback((assignment: QuizAssignmentWithDetails) => {
     if (assignment.completed_at) {
         alert(`You have already completed this quiz. Your score was ${assignment.score}/${assignment.total_questions}.`);
@@ -201,9 +199,41 @@ export default function ChatPage() {
     setCurrentQuizSession(null);
     setIsQuizModalOpen(false);
   }, [currentQuizSession, profile]);
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+
+  // NEW: Handle saving message as note
+  const handleSaveAsNote = useCallback(async (content: string, title?: string) => {
+    if (!profile) {
+      console.error("User profile not available for saving note");
+      return;
+    }
+
+    try {
+      const noteTitle = title || `Note from ${new Date().toLocaleDateString()}`;
+      const newNote = await db.createNote(
+        profile.id, 
+        noteTitle, 
+        content, 
+        currentConversationId || undefined
+      );
+      
+      setNotes(prev => [newNote, ...prev]);
+      console.log("Note saved successfully:", newNote);
+    } catch (error) {
+      console.error("Error saving note:", error);
+      throw error; // Re-throw so MessageBubble can show error to user
+    }
+  }, [profile, currentConversationId]);
+
+  // NEW: Handle deleting note
+  const handleDeleteNote = useCallback(async (noteId: string) => {
+    try {
+      await db.deleteNote(noteId);
+      setNotes(prev => prev.filter(note => note.id !== noteId));
+    } catch (error) {
+      console.error("Error deleting note:", error);
+      alert("Could not delete the note. Please try again.");
+    }
+  }, []);
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) {
@@ -407,7 +437,7 @@ export default function ChatPage() {
       
       <Sidebar
         conversations={conversations}
-        notes={[]}
+        notes={notes}
         assignedQuizzes={assignedQuizzes}
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
@@ -418,7 +448,7 @@ export default function ChatPage() {
         onSelectAssignedQuiz={handleSelectAssignedQuiz}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
-        onDeleteNote={() => {}}
+        onDeleteNote={handleDeleteNote}
         onOpenSettings={() => setSettingsOpen(true)}
         settings={settings}
         onModelChange={(model) => setSettings(s => ({ ...s, selectedModel: model }))}
@@ -456,7 +486,7 @@ export default function ChatPage() {
             streamingMessage={streamingMessage}
             hasApiKey={true}
             onStopGenerating={() => { stopStreamingRef.current = true; }}
-            onSaveAsNote={() => {}}
+            onSaveAsNote={handleSaveAsNote}
             onGenerateQuiz={handleGenerateQuiz}
           />
         )}
