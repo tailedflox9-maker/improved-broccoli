@@ -39,13 +39,13 @@ export function ChatArea({
 }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
-  
+
   // Search functionality
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [searchResults, setSearchResults] = useState<Message[]>([]);
-  
+
   // Pagination
   const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
@@ -227,38 +227,74 @@ export function ChatArea({
   }
 
   return (
-    <div className="chat-area relative">
-      {/* Search Bar */}
+    <div className="chat-area">
+      {/* Search Bar - Only show when active */}
       {showSearch && (
-        <div className="absolute top-4 left-4 right-4 z-10 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-3 shadow-lg">
-          <div className="flex items-center gap-3">
-            <Search className="w-4 h-4 text-[var(--color-text-secondary)]" />
+        <div style={{ 
+          position: 'absolute', 
+          top: '10px', 
+          left: '10px', 
+          right: '10px', 
+          zIndex: 10,
+          backgroundColor: 'var(--color-card)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '8px',
+          padding: '12px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Search style={{ width: '16px', height: '16px', color: 'var(--color-text-secondary)' }} />
             <input
               type="text"
               placeholder="Search messages... (Ctrl+F)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 bg-transparent border-none outline-none text-[var(--color-text-primary)] placeholder-[var(--color-text-placeholder)]"
+              style={{
+                flex: 1,
+                backgroundColor: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--color-text-primary)',
+                fontSize: '14px'
+              }}
               autoFocus
             />
             {searchResults.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--color-text-secondary)]">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                   {currentSearchIndex + 1} of {searchResults.length}
                 </span>
                 <button
                   onClick={handleSearchPrev}
-                  className="interactive-button p-1 hover:bg-[var(--color-border)] rounded"
+                  style={{
+                    padding: '4px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: 'var(--color-text-secondary)'
+                  }}
                   title="Previous (Ctrl+K)"
                 >
-                  <ChevronUp className="w-3 h-3" />
+                  <ChevronUp style={{ width: '12px', height: '12px' }} />
                 </button>
                 <button
                   onClick={handleSearchNext}
-                  className="interactive-button p-1 hover:bg-[var(--color-border)] rounded"
+                  style={{
+                    padding: '4px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: 'var(--color-text-secondary)'
+                  }}
                   title="Next (Ctrl+J)"
                 >
-                  <ChevronDown className="w-3 h-3" />
+                  <ChevronDown style={{ width: '12px', height: '12px' }} />
                 </button>
               </div>
             )}
@@ -267,46 +303,80 @@ export function ChatArea({
                 setShowSearch(false);
                 setSearchTerm('');
               }}
-              className="interactive-button p-1 hover:bg-[var(--color-border)] rounded"
+              style={{
+                padding: '4px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                color: 'var(--color-text-secondary)'
+              }}
             >
-              <X className="w-4 h-4" />
+              <X style={{ width: '16px', height: '16px' }} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Chat Header */}
+      {/* Add subtle toolbar for search and pin */}
       {conversation && (
-        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-sidebar)]">
-          <div className="flex items-center gap-3">
-            <h3 className="font-semibold text-[var(--color-text-primary)] truncate">
+        <div style={{
+          padding: '8px 16px',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: 'var(--color-bg)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--color-text-primary)' }}>
               {conversation.title}
-            </h3>
+            </span>
             {conversation.is_pinned && (
-              <Star className="w-4 h-4 text-yellow-400 fill-current" />
+              <Star style={{ width: '14px', height: '14px', color: '#fbbf24', fill: '#fbbf24' }} />
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               onClick={() => setShowSearch(true)}
-              className="interactive-button p-2 hover:bg-[var(--color-border)] rounded"
+              style={{
+                padding: '6px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                color: 'var(--color-text-secondary)'
+              }}
               title="Search (Ctrl+F)"
             >
-              <Search className="w-4 h-4" />
+              <Search style={{ width: '16px', height: '16px' }} />
             </button>
             {onTogglePin && (
               <button
                 onClick={handleTogglePin}
                 disabled={isPinning}
-                className="interactive-button p-2 hover:bg-[var(--color-border)] rounded"
+                style={{
+                  padding: '6px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--color-text-secondary)'
+                }}
                 title={conversation.is_pinned ? "Unpin conversation" : "Pin conversation"}
               >
                 {isPinning ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
                 ) : conversation.is_pinned ? (
-                  <StarOff className="w-4 h-4" />
+                  <StarOff style={{ width: '16px', height: '16px' }} />
                 ) : (
-                  <Star className="w-4 h-4" />
+                  <Star style={{ width: '16px', height: '16px' }} />
                 )}
               </button>
             )}
@@ -322,15 +392,26 @@ export function ChatArea({
         <div className="chat-messages-container">
           {/* Load More Button */}
           {hasMoreMessages && (
-            <div className="flex justify-center py-4">
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '16px' }}>
               <button
                 onClick={handleLoadMore}
                 disabled={isLoadingMore}
-                className="interactive-button px-4 py-2 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-gray-600 transition-all"
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'var(--color-card)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
               >
                 {isLoadingMore ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
                     Loading...
                   </>
                 ) : (
