@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { ChatArea } from '../components/ChatArea';
-import { NoteView } from '../components/NoteView';
 import { SettingsModal } from '../components/SettingsModal';
 import { QuizModal } from '../components/QuizModal';
 import { AdminPanelComponent } from '../components/AdminPanelComponent';
@@ -18,13 +17,17 @@ export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
   const [assignedQuizzes, setAssignedQuizzes] = useState<QuizAssignmentWithDetails[]>([]);
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
   const [settings, setSettings] = useState<APISettings>(() => storageUtils.getSettings());
   const [initialized, setInitialized] = useState(false);
   
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   
@@ -38,9 +41,6 @@ export default function ChatPage() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
   
-  // Error handling state
-  const [lastError, setLastError] = useState<string | null>(null);
-  
   const stopStreamingRef = useRef(false);
   const [sidebarFolded, setSidebarFolded] = useState(() => {
     try {
@@ -50,19 +50,10 @@ export default function ChatPage() {
     }
   });
 
-  // Error handling helper
-  const handleError = useCallback((error: any, context: string) => {
-    console.error(`Error in ${context}:`, error);
-    const errorMessage = db.handleDatabaseError(error, context).message;
-    setLastError(errorMessage);
-    setTimeout(() => setLastError(null), 5000);
-  }, []);
-
   const handleToggleAdminPanel = useCallback(() => {
     if (profile?.role === 'admin') {
       setShowAdminPanel(prev => !prev);
       setShowTeacherDashboard(false);
-      setCurrentNoteId(null);
       if (window.innerWidth < 1024) setSidebarOpen(false);
     }
   }, [profile]);
@@ -71,7 +62,6 @@ export default function ChatPage() {
       if (profile?.role === 'teacher') {
           setShowTeacherDashboard(prev => !prev);
           setShowAdminPanel(false);
-          setCurrentNoteId(null);
           if (window.innerWidth < 1024) setSidebarOpen(false);
       }
   }, [profile]);
@@ -79,16 +69,13 @@ export default function ChatPage() {
   const handleSwitchToChatView = useCallback(() => {
       setShowAdminPanel(false);
       setShowTeacherDashboard(false);
-      setCurrentNoteId(null);
       if (window.innerWidth < 1024) setSidebarOpen(false);
   }, []);
 
   const createNewConversation = useCallback(async (title: string): Promise<Conversation> => {
     if (!profile) throw new Error("User profile not available.");
     try {
-        const newConversation = await db.retryOperation(() => 
-          db.createConversation(profile.id, title)
-        );
+        const newConversation = await db.createConversation(profile.id, title);
         setConversations(prev => [newConversation, ...prev]);
         setCurrentConversationId(newConversation.id);
         handleSwitchToChatView();
@@ -97,85 +84,15 @@ export default function ChatPage() {
         }
         return newConversation;
     } catch (error) {
-        handleError(error, "create conversation");
+        console.error("Error creating new conversation:", error);
+        alert("Could not create a new conversation. Please try again.");
         throw error;
     }
-  }, [profile, handleSwitchToChatView, handleError]);
+  }, [profile, handleSwitchToChatView]);
 
   const handleNewConversation = useCallback(async () => {
     await createNewConversation('New Chat');
   }, [createNewConversation]);
-
-  // Enhanced save note function
-  const handleSaveAsNote = useCallback(async (content: string, title?: string) => {
-    if (!profile) {
-      throw new Error("User profile not available");
-    }
-
-    try {
-      const savedNote = await db.retryOperation(() => 
-        db.createNoteFromMessage(
-          profile.id, 
-          content, 
-          title, 
-          currentConversationId || undefined
-        )
-      );
-      
-      // Optimistic update
-      setNotes(prev => [savedNote, ...prev]);
-      
-      return savedNote;
-    } catch (error) {
-      handleError(error, "save note");
-      throw error;
-    }
-  }, [profile, currentConversationId, handleError]);
-
-  // Toggle conversation pin
-  const handleTogglePin = useCallback(async (conversationId: string) => {
-    try {
-      // Optimistic update
-      setConversations(prev => prev.map(conv => 
-        conv.id === conversationId 
-          ? { ...conv, is_pinned: !conv.is_pinned }
-          : conv
-      ));
-
-      const newPinStatus = await db.retryOperation(() => 
-        db.toggleConversationPin(conversationId)
-      );
-
-      // Update with actual result (in case optimistic update was wrong)
-      setConversations(prev => prev.map(conv => 
-        conv.id === conversationId 
-          ? { ...conv, is_pinned: newPinStatus }
-          : conv
-      ));
-
-    } catch (error) {
-      // Rollback optimistic update
-      setConversations(prev => prev.map(conv => 
-        conv.id === conversationId 
-          ? { ...conv, is_pinned: !conv.is_pinned }
-          : conv
-      ));
-      handleError(error, "toggle pin");
-    }
-  }, [handleError]);
-
-  // Load more messages for pagination
-  const handleLoadMoreMessages = useCallback(async (conversationId: string, offset: number) => {
-    try {
-      const moreMessages = await db.retryOperation(() => 
-        db.getConversationMessagesWithPagination(conversationId, 20, offset)
-      );
-      return moreMessages;
-    } catch (error) {
-      handleError(error, "load more messages");
-      return [];
-    }
-  }, [handleError]);
 
   // Effect to fetch initial data for the user
   useEffect(() => {
@@ -183,32 +100,27 @@ export default function ChatPage() {
     
     const fetchInitialData = async () => {
         try {
-            const [userConversations, userNotes, userQuizzes] = await Promise.all([
-              db.retryOperation(() => db.getConversationsWithPinning(profile.id)),
-              db.retryOperation(() => db.getNotes(profile.id)),
-              profile.role === 'student' 
-                ? db.retryOperation(() => db.getAssignedQuizzesForStudent(profile.id))
-                : Promise.resolve([])
-            ]);
-
+            const userConversations = await db.getConversations(profile.id);
             setConversations(userConversations);
-            setNotes(userNotes);
-            setAssignedQuizzes(userQuizzes);
-            
             if (userConversations.length > 0) {
                 setCurrentConversationId(userConversations[0].id);
             } else {
                 setCurrentConversationId(null);
             }
+
+            if (profile.role === 'student') {
+                const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
+                setAssignedQuizzes(quizzes);
+            }
         } catch (err) {
-            handleError(err, "fetch initial data");
+            console.error("Failed to fetch initial data:", err);
         } finally {
             setInitialized(true);
         }
     };
     
     fetchInitialData();
-  }, [profile, initialized, handleError]);
+  }, [profile, initialized]);
 
   // Effect to fetch messages for the currently selected conversation
   useEffect(() => {
@@ -218,19 +130,17 @@ export default function ChatPage() {
       if (currentConvo && !currentConvo.messages) {
           const fetchMessages = async () => {
               try {
-                  const messages = await db.retryOperation(() => 
-                    db.getConversationMessages(currentConversationId)
-                  );
+                  const messages = await db.getConversationMessages(currentConversationId);
                   setConversations(prev => prev.map(c => 
                       c.id === currentConversationId ? { ...c, messages } : c
                   ));
               } catch (err) {
-                  handleError(err, "fetch messages");
+                  console.error("Failed to fetch messages:", err);
               }
           };
           fetchMessages();
       }
-  }, [currentConversationId, conversations, handleError]);
+  }, [currentConversationId, conversations]);
 
   useEffect(() => { storageUtils.saveSettings(settings); aiService.updateSettings(settings); }, [settings]);
   useEffect(() => { localStorage.setItem('ai-tutor-sidebar-folded', JSON.stringify(sidebarFolded)); }, [sidebarFolded]);
@@ -246,23 +156,14 @@ export default function ChatPage() {
     [conversations, currentConversationId]
   );
 
-  const currentNote = useMemo(() =>
-    notes.find(n => n.id === currentNoteId),
-    [notes, currentNoteId]
-  );
-
   const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id);
-    setCurrentNoteId(null);
-    handleSwitchToChatView();
-  }, [handleSwitchToChatView]);
-
-  const handleSelectNote = useCallback((id: string) => {
-    setCurrentNoteId(id);
-    setCurrentConversationId(null);
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
   
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
   const handleSelectAssignedQuiz = useCallback((assignment: QuizAssignmentWithDetails) => {
     if (assignment.completed_at) {
         alert(`You have already completed this quiz. Your score was ${assignment.score}/${assignment.total_questions}.`);
@@ -270,7 +171,7 @@ export default function ChatPage() {
     }
     const session: StudySession = {
       id: generateId(),
-      conversationId: '',
+      conversationId: '', // Not from a conversation
       questions: assignment.generated_quizzes.questions,
       currentQuestionIndex: 0,
       score: 0,
@@ -286,22 +187,23 @@ export default function ChatPage() {
   const handleFinishQuiz = useCallback(async (score: number, totalQuestions: number) => {
     if (currentQuizSession?.assignmentId) {
         try {
-            await db.retryOperation(() => 
-              db.markQuizAsCompleted(currentQuizSession.assignmentId!, score, totalQuestions)
-            );
+            await db.markQuizAsCompleted(currentQuizSession.assignmentId, score, totalQuestions);
+            // Refetch quizzes to update status
             if (profile) {
-                const quizzes = await db.retryOperation(() => 
-                  db.getAssignedQuizzesForStudent(profile.id)
-                );
+                const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
                 setAssignedQuizzes(quizzes);
             }
         } catch (err) {
-            handleError(err, "mark quiz as completed");
+            console.error("Failed to mark quiz as completed:", err);
+            alert("There was an error saving your quiz result.");
         }
     }
     setCurrentQuizSession(null);
     setIsQuizModalOpen(false);
-  }, [currentQuizSession, profile, handleError]);
+  }, [currentQuizSession, profile]);
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!profile) {
@@ -317,6 +219,7 @@ export default function ChatPage() {
         const newConversation = await createNewConversation(newTitle);
         conversationToUseId = newConversation.id;
       } catch (err) {
+        console.error("Failed to create a new conversation for the first message:", err);
         return;
       }
     }
@@ -330,7 +233,6 @@ export default function ChatPage() {
       created_at: new Date() 
     };
     
-    // Optimistic update
     setConversations(prev => prev.map(c => c.id === conversationToUseId ? { 
       ...c,
       messages: [...(c.messages || []), userMessage], 
@@ -339,23 +241,20 @@ export default function ChatPage() {
     setIsChatLoading(true);
     stopStreamingRef.current = false;
     
-    // Save user message with retry
-    db.retryOperation(() => db.addMessage({
+    db.addMessage({
       conversation_id: userMessage.conversation_id,
       user_id: userMessage.user_id,
       content: userMessage.content,
       role: userMessage.role,
-    })).catch(err => handleError(err, "save user message"));
+    }).catch(err => console.error("Failed to save user message:", err));
     
     const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
     if (isFirstMessage) {
         const newTitle = generateConversationTitle(content);
         setConversations(prev => prev.map(c => c.id === conversationToUseId ? {...c, title: newTitle} : c));
-        db.retryOperation(() => db.updateConversationTitle(conversationToUseId, newTitle))
-          .catch(err => handleError(err, "update conversation title"));
+        db.updateConversationTitle(conversationToUseId, newTitle).catch(err => console.error("Failed to update title:", err));
     } else {
-        db.retryOperation(() => db.updateConversationTimestamp(conversationToUseId))
-          .catch(err => handleError(err, "update conversation timestamp"));
+        db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
     }
     
     try {
@@ -387,11 +286,7 @@ export default function ChatPage() {
       if (!stopStreamingRef.current && fullResponse.trim()) {
         const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
         
-        db.retryOperation(() => db.addMessage({ 
-          ...finalAssistantMessage, 
-          id: undefined, 
-          created_at: undefined 
-        })).catch(err => handleError(err, "save assistant message"));
+        db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
         
         setConversations(prev => prev.map(c => {
           if (c.id === conversationToUseId) {
@@ -402,7 +297,7 @@ export default function ChatPage() {
         }));
       }
     } catch (error) {
-      handleError(error, "generate AI response");
+      console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
       const errorMessage = { 
         id: generateId(), conversation_id: conversationToUseId, user_id: profile.id, 
@@ -416,12 +311,13 @@ export default function ChatPage() {
         }
         return c;
       }));
+      db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
       setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
-  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation, handleError]);
+  }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
 
   const handleGenerateQuiz = useCallback(async () => {
     if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
@@ -435,17 +331,16 @@ export default function ChatPage() {
       setCurrentQuizSession(quizSession);
       setIsQuizModalOpen(true);
     } catch (error) {
-      handleError(error, "generate quiz");
+      console.error('Error generating quiz:', error);
+      alert(`Failed to generate quiz: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsQuizLoading(false);
     }
-  }, [currentConversation, handleError]);
+  }, [currentConversation]);
 
   const handleDeleteConversation = useCallback(async (id: string) => {
-    const conversationToDelete = conversations.find(c => c.id === id);
-    if (!conversationToDelete) return;
-
-    // Optimistic update
+    const originalConversations = conversations;
+    
     const remaining = conversations.filter(c => c.id !== id);
     setConversations(remaining);
     
@@ -454,55 +349,29 @@ export default function ChatPage() {
     }
     
     try {
-        await db.retryOperation(() => db.deleteConversation(id));
+        await db.deleteConversation(id);
     } catch (err) {
-        // Rollback
-        setConversations(prev => [conversationToDelete, ...prev.filter(c => c.id !== id)]);
-        if (currentConversationId === id) {
-          setCurrentConversationId(id);
-        }
-        handleError(err, "delete conversation");
+        console.error("Failed to delete conversation:", err);
+        setConversations(originalConversations); // Revert on failure
+        alert("Could not delete the conversation.");
     }
-  }, [conversations, currentConversationId, handleError]);
+  }, [conversations, currentConversationId]);
 
   const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
     const originalTitle = conversations.find(c => c.id === id)?.title;
-    
-    // Optimistic update
     setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
-    
     try {
-        await db.retryOperation(() => db.updateConversationTitle(id, newTitle));
+        await db.updateConversationTitle(id, newTitle);
     } catch (err) {
-        // Rollback
+        console.error("Failed to rename conversation:", err);
         setConversations(prev => prev.map(c => c.id === id ? { ...c, title: originalTitle || c.title } : c));
-        handleError(err, "rename conversation");
+        alert("Could not rename the conversation.");
     }
-  }, [conversations, handleError]);
-
-  const handleDeleteNote = useCallback(async (id: string) => {
-    const noteToDelete = notes.find(n => n.id === id);
-    if (!noteToDelete) return;
-
-    // Optimistic update
-    setNotes(prev => prev.filter(n => n.id !== id));
-    if (currentNoteId === id) {
-      setCurrentNoteId(null);
-    }
-
-    try {
-      await db.retryOperation(() => db.deleteNote(id));
-    } catch (err) {
-      // Rollback
-      setNotes(prev => [noteToDelete, ...prev.filter(n => n.id !== id)]);
-      handleError(err, "delete note");
-    }
-  }, [notes, currentNoteId, handleError]);
+  }, [conversations]);
 
   const getActiveView = () => {
       if (showAdminPanel) return 'admin';
       if (showTeacherDashboard) return 'dashboard';
-      if (currentNoteId) return 'note';
       return 'chat';
   }
 
@@ -532,31 +401,24 @@ export default function ChatPage() {
 
   return (
     <div className="app-container">
-      {/* Error notification */}
-      {lastError && (
-        <div className="fixed top-4 right-4 z-50 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg">
-          {lastError}
-        </div>
-      )}
-
       {sidebarOpen && window.innerWidth < 1024 && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
       
       <Sidebar
         conversations={conversations}
-        notes={notes}
+        notes={[]}
         assignedQuizzes={assignedQuizzes}
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
-        currentNoteId={currentNoteId}
+        currentNoteId={null}
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
-        onSelectNote={handleSelectNote}
+        onSelectNote={() => {}}
         onSelectAssignedQuiz={handleSelectAssignedQuiz}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
-        onDeleteNote={handleDeleteNote}
+        onDeleteNote={() => {}}
         onOpenSettings={() => setSettingsOpen(true)}
         settings={settings}
         onModelChange={(model) => setSettings(s => ({ ...s, selectedModel: model }))}
@@ -585,8 +447,6 @@ export default function ChatPage() {
           <AdminPanelComponent onClose={handleToggleAdminPanel} />
         ) : showTeacherDashboard ? (
           <TeacherDashboardComponent />
-        ) : currentNoteId ? (
-          <NoteView note={currentNote} />
         ) : (
           <ChatArea
             conversation={currentConversation}
@@ -596,10 +456,8 @@ export default function ChatPage() {
             streamingMessage={streamingMessage}
             hasApiKey={true}
             onStopGenerating={() => { stopStreamingRef.current = true; }}
-            onSaveAsNote={handleSaveAsNote}
+            onSaveAsNote={() => {}}
             onGenerateQuiz={handleGenerateQuiz}
-            onTogglePin={handleTogglePin}
-            onLoadMoreMessages={handleLoadMoreMessages}
           />
         )}
       </div>
