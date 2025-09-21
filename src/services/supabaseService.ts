@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, Assignment, StudentAssignment, StudentAssignmentDetails } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
 
 // --- PROFILE & USER MGMT ---
 export const getProfile = async (): Promise<Profile> => {
@@ -259,21 +259,28 @@ export const markQuizAsCompleted = async (assignmentId: string, score: number, t
   if (error) throw error;
 };
 
+// Function to delete a generated quiz
 export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   try {
+    // First check if there are any assignments for this quiz
     const { data: assignments, error: checkError } = await supabase
       .from('quiz_assignments')
       .select('id')
       .eq('quiz_id', quizId)
       .limit(1);
+
     if (checkError) throw checkError;
+
     if (assignments && assignments.length > 0) {
       throw new Error('Cannot delete quiz that has been assigned to students. Please remove assignments first.');
     }
+
+    // Delete the quiz if no assignments exist
     const { error } = await supabase
       .from('generated_quizzes')
       .delete()
       .eq('id', quizId);
+
     if (error) throw error;
   } catch (error: any) {
     console.error('Error deleting quiz:', error);
@@ -281,6 +288,7 @@ export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   }
 };
 
+// Function to get quiz assignments with completion details for a teacher
 export const getQuizAssignmentDetails = async (teacherId: string) => {
   try {
     const { data, error } = await supabase
@@ -296,6 +304,7 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
       `)
       .eq('teacher_id', teacherId)
       .order('created_at', { ascending: false });
+
     if (error) throw error;
     return data || [];
   } catch (error) {
@@ -304,6 +313,7 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
   }
 };
 
+// Function to unassign a quiz from students
 export const unassignQuizFromStudents = async (quizId: string, studentIds: string[]): Promise<void> => {
   try {
     const { error } = await supabase
@@ -311,112 +321,13 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
       .delete()
       .eq('quiz_id', quizId)
       .in('student_id', studentIds)
-      .is('completed_at', null);
+      .is('completed_at', null); // Only unassign if not completed
+
     if (error) throw error;
   } catch (error: any) {
     console.error('Error unassigning quiz:', error);
     throw error;
   }
-};
-
-// --- ASSIGNMENTS ---
-export const createAssignment = async (
-  assignment: Omit<Assignment, 'id' | 'created_at'>,
-  studentIds: string[]
-): Promise<Assignment> => {
-  const { data: newAssignment, error: assignmentError } = await supabase
-    .from('assignments')
-    .insert(assignment)
-    .select()
-    .single();
-  if (assignmentError) throw assignmentError;
-
-  const studentAssignments = studentIds.map(student_id => ({
-    assignment_id: newAssignment.id,
-    student_id: student_id,
-    status: 'pending' as const,
-  }));
-  const { error: studentAssignmentError } = await supabase
-    .from('student_assignments')
-    .insert(studentAssignments);
-  if (studentAssignmentError) {
-    await supabase.from('assignments').delete().eq('id', newAssignment.id);
-    throw studentAssignmentError;
-  }
-  return newAssignment as Assignment;
-};
-
-export const getAssignmentsForTeacher = async (teacherId: string): Promise<Assignment[]> => {
-  const { data, error } = await supabase
-    .from('assignments')
-    .select('*')
-    .eq('teacher_id', teacherId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data as Assignment[];
-};
-
-export const getAssignmentsForStudent = async (studentId: string): Promise<StudentAssignmentDetails[]> => {
-  const { data, error } = await supabase
-    .from('student_assignments')
-    .select(`
-      *,
-      assignments (
-        title,
-        description,
-        due_at
-      )
-    `)
-    .eq('student_id', studentId)
-    .order('created_at', { ascending: false, foreignTable: 'assignments' });
-  if (error) throw error;
-  return data as StudentAssignmentDetails[];
-};
-
-export const getSubmissionsForAssignment = async (assignmentId: string): Promise<StudentAssignmentDetails[]> => {
-  const { data, error } = await supabase
-    .from('student_assignments')
-    .select(`
-      *,
-      profiles (
-        full_name,
-        email
-      )
-    `)
-    .eq('assignment_id', assignmentId)
-    .order('submitted_at', { ascending: true });
-  if (error) throw error;
-  return data as StudentAssignmentDetails[];
-};
-
-export const submitAssignment = async (studentAssignmentId: string, submissionContent: string): Promise<StudentAssignment> => {
-  const { data, error } = await supabase
-    .from('student_assignments')
-    .update({
-      submission_content: submissionContent,
-      status: 'submitted',
-      submitted_at: new Date().toISOString(),
-    })
-    .eq('id', studentAssignmentId)
-    .select()
-    .single();
-  if (error) throw error;
-  return data as StudentAssignment;
-};
-
-export const gradeAssignment = async (studentAssignmentId: string, feedback: string, grade: number): Promise<StudentAssignment> => {
-    const { data, error } = await supabase
-      .from('student_assignments')
-      .update({
-        feedback,
-        grade,
-        status: 'graded',
-      })
-      .eq('id', studentAssignmentId)
-      .select()
-      .single();
-    if (error) throw error;
-    return data as StudentAssignment;
 };
 
 // --- SAFETY ---
@@ -427,12 +338,7 @@ export const flagMessage = async (flaggedMessage: any) => {
 
 // --- TEACHER DASHBOARD ---
 export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[]> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('teacher_id', teacherId)
-    .eq('role', 'student');
-
+  const { data, error } = await supabase.rpc('get_students_for_teacher', { teacher_id_param: teacherId });
   if (error) {
     console.error('Error fetching students for teacher:', error);
     throw error;
@@ -441,52 +347,18 @@ export const getStudentsForTeacher = async (teacherId: string): Promise<Profile[
 };
 
 export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<FlaggedMessage[]> => {
-    const { data: students, error: studentsError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('teacher_id', teacherId);
-
-    if (studentsError) {
-      console.error('Error fetching student IDs for teacher:', studentsError);
-      throw studentsError;
-    }
-    
-    if (!students || students.length === 0) {
-      return [];
-    }
-
-    const studentIds = students.map(s => s.id);
-
-    const { data, error } = await supabase
-      .from('flagged_messages')
-      .select(`
-        id,
-        message_content,
-        student_id,
-        created_at,
-        profiles ( full_name )
-      `)
-      .in('student_id', studentIds)
-      .order('created_at', { ascending: false });
-
+    const { data, error } = await supabase.rpc('get_flagged_messages_for_teacher', { teacher_id_param: teacherId });
     if (error) {
         console.error('Error fetching flagged messages:', error);
         throw error;
     }
-
-    const formattedData = data.map((msg: any) => ({
-      id: msg.id,
-      message_content: msg.message_content,
-      student_id: msg.student_id,
-      created_at: msg.created_at,
-      student_name: msg.profiles?.full_name || 'Unknown Student'
-    }));
-    
-    return formattedData as FlaggedMessage[];
+    return data as FlaggedMessage[];
 };
 
+// Improved student stats function that includes quiz assignment data
 export const getStudentStatsImproved = async (studentId: string) => {
   try {
+    // Count conversations (questions asked)
     const { count: questionCount, error: convError } = await supabase
       .from('conversations')
       .select('*', { count: 'exact', head: true })
@@ -495,6 +367,7 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (convError) throw convError;
 
+    // Get completed quiz assignments (more accurate than old quiz table)
     const { data: completedAssignments, error: assignmentError } = await supabase
       .from('quiz_assignments')
       .select('score, total_questions')
@@ -503,6 +376,7 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (assignmentError) throw assignmentError;
 
+    // Fallback to old quiz table for backward compatibility
     const { data: oldQuizzes, error: oldQuizError } = await supabase
       .from('quizzes')
       .select('score, total_questions')
@@ -510,6 +384,7 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (oldQuizError) throw oldQuizError;
 
+    // Combine both sources
     const allQuizzes = [
       ...(completedAssignments || []),
       ...(oldQuizzes || [])
@@ -520,7 +395,7 @@ export const getStudentStatsImproved = async (studentId: string) => {
 
     if (quizAttempts > 0) {
       const totalScore = allQuizzes.reduce((acc, quiz) => {
-        const percentage = (quiz.score && quiz.total_questions) ? (quiz.score / quiz.total_questions) * 100 : 0;
+        const percentage = (quiz.score / quiz.total_questions) * 100;
         return acc + percentage;
       }, 0);
       averageScore = totalScore / quizAttempts;
@@ -529,12 +404,22 @@ export const getStudentStatsImproved = async (studentId: string) => {
     return {
       questionCount: questionCount ?? 0,
       quizAttempts,
-      averageScore: Math.round(averageScore * 10) / 10
+      averageScore: Math.round(averageScore * 10) / 10 // Round to 1 decimal
     };
   } catch (error) {
     console.error('Error fetching improved student stats:', error);
     throw error;
   }
+};
+
+export const getStudentStats = async (studentId: string) => {
+  const { count: questionCount, error: convError } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', studentId);
+  if (convError) throw convError;
+  const { data: quizzes, error: quizError } = await supabase.from('quizzes').select('score, total_questions').eq('user_id', studentId);
+  if (quizError) throw quizError;
+  const quizAttempts = quizzes ? quizzes.length : 0;
+  const averageScore = quizAttempts > 0 ? (quizzes.reduce((acc, q) => acc + (q.score / q.total_questions), 0) / quizAttempts) * 100 : 0;
+  return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
 // --- ADMIN PANEL ---
@@ -554,6 +439,7 @@ export const getAllUsers = async (): Promise<Profile[]> => {
     }
 };
 
+// Admin function to get ALL conversations (including soft-deleted)
 export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
   const { data, error } = await supabase
     .from('conversations')
@@ -568,6 +454,7 @@ export const getAllConversationsForUser_Admin = async (userId: string): Promise<
   })) as Conversation[];
 };
 
+// Hard delete for admins only
 export const permanentDeleteConversation = async (id: string): Promise<void> => {
   const adminClient = getAdminClient();
   const { error } = await adminClient.from('conversations').delete().eq('id', id);
@@ -601,8 +488,6 @@ export const createUser = async (userData: { email: string; password: string; fu
   }
 };
 
-// =================================== FIX START ===================================
-// The => was removed here to fix the syntax error.
 export const assignTeacherToStudent = async (teacherId: string, studentId: string): Promise<void> => {
   try {
     if (!teacherId?.trim() || !studentId?.trim()) throw new Error('Teacher and Student IDs are required.');
@@ -618,4 +503,3 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
-// =================================== FIX END =====================================
