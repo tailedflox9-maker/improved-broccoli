@@ -1,68 +1,53 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  Plus,
-  MessageSquare,
+  MessageSquarePlus,
   Settings,
-  Trash2,
-  X,
   ChevronLeft,
   ChevronRight,
-  Search,
-  Edit,
-  LogOut,
-  LayoutDashboard,
-  Shield,
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
+  X,
+  Edit2,
+  Trash2,
+  Plus,
+  Star,
+  StarOff,
+  Pin,
+  PinOff,
+  Bookmark,
+  BookmarkCheck,
   ClipboardCheck,
-  CheckCircle,
-  Clock,
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+  Check,
+  Shield,
+  GraduationCap,
+  Users,
+  ArrowLeft
 } from 'lucide-react';
-import { Conversation, Note, Profile, APISettings, QuizAssignmentWithDetails } from '../types';
-import { useAuth } from '../hooks/useAuth';
-import { Link } from 'react-router-dom';
+import { Conversation, Note, APISettings, Profile, QuizAssignmentWithDetails } from '../types';
 import { formatDate } from '../utils/helpers';
 
 interface SidebarProps {
   conversations: Conversation[];
   notes: Note[];
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   assignedQuizzes: QuizAssignmentWithDetails[];
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
   activeView: 'chat' | 'note' | 'admin' | 'dashboard';
   currentConversationId: string | null;
   currentNoteId: string | null;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
-  onSelectNote: (id: string | null) => void;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
-  onSelectAssignedQuiz: (quiz: QuizAssignmentWithDetails) => void;
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+  onSelectNote: (id: string) => void;
+  onSelectAssignedQuiz: (assignment: QuizAssignmentWithDetails) => void;
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   onDeleteNote: (id: string) => void;
   onOpenSettings: () => void;
-  onCloseSidebar: () => void;
-  isSidebarOpen: boolean;
-  isFolded?: boolean;
-  onToggleFold?: () => void;
-  userProfile: Profile | null;
   settings: APISettings;
-  onModelChange: (model: any) => void;
-  onToggleAdminPanel?: () => void;
-  onToggleTeacherDashboard?: () => void;
+  onModelChange: (model: APISettings['selectedModel']) => void;
+  onCloseSidebar: () => void;
+  isFolded: boolean;
+  onToggleFold: () => void;
+  isSidebarOpen: boolean;
+  userProfile: Profile | null;
+  onToggleAdminPanel: () => void;
+  onToggleTeacherDashboard: () => void;
   onSwitchToChatView: () => void;
 }
 
@@ -81,302 +66,454 @@ export function Sidebar({
   onRenameConversation,
   onDeleteNote,
   onOpenSettings,
+  settings,
+  onModelChange,
   onCloseSidebar,
-  isSidebarOpen,
-  isFolded = false,
+  isFolded,
   onToggleFold,
+  isSidebarOpen,
   userProfile,
   onToggleAdminPanel,
   onToggleTeacherDashboard,
   onSwitchToChatView,
 }: SidebarProps) {
-  const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [view, setView] = useState<'chats' | 'notes' | 'quizzes'>('chats');
-  const { logout } = useAuth();
 
-  const filteredConversations = useMemo(() =>
-    conversations.filter(c =>
-      c.title.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [conversations, searchQuery]
-  );
+  const handleRename = useCallback((id: string, currentTitle: string) => {
+    setEditingId(id);
+    setEditingTitle(currentTitle);
+  }, []);
 
-  const filteredNotes = useMemo(() =>
-    notes.filter(n =>
-      n.title.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [notes, searchQuery]
-  );
-
-  const filteredQuizzes = useMemo(() =>
-    assignedQuizzes.filter(q =>
-      q.generated_quizzes.topic.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [assignedQuizzes, searchQuery]
-  );
-
-  const handleStartEditing = (conversation: Conversation) => {
-    setEditingId(conversation.id);
-    setEditingTitle(conversation.title);
-  };
-
-  const handleSaveEdit = () => {
-    if (editingId && editingTitle.trim()) {
-      onRenameConversation(editingId, editingTitle.trim());
+  const handleSaveRename = useCallback((id: string) => {
+    if (editingTitle.trim()) {
+      onRenameConversation(id, editingTitle.trim());
     }
     setEditingId(null);
-  };
+    setEditingTitle('');
+  }, [editingTitle, onRenameConversation]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSaveEdit();
-    else if (e.key === 'Escape') setEditingId(null);
-  };
+  const handleCancelRename = useCallback(() => {
+    setEditingId(null);
+    setEditingTitle('');
+  }, []);
 
-  const isPanelViewActive = activeView === 'admin' || activeView === 'dashboard';
-  const sidebarClasses = `bg-[var(--color-sidebar)] flex flex-col h-full border-r border-[var(--color-border)] sidebar transition-all duration-300 ease-in-out fixed lg:static z-50 ${isSidebarOpen ? 'sidebar-open' : 'hidden lg:flex'} ${isFolded ? 'w-14' : 'w-64'}`;
+  const handleDelete = useCallback((type: 'conversation' | 'note', id: string) => {
+    const itemName = type === 'conversation' ? 'conversation' : 'note';
+    const confirmMessage = `Are you sure you want to delete this ${itemName}? This action cannot be undone.`;
+    
+    if (window.confirm(confirmMessage)) {
+      if (type === 'conversation') {
+        onDeleteConversation(id);
+      } else {
+        onDeleteNote(id);
+      }
+    }
+  }, [onDeleteConversation, onDeleteNote]);
 
-  return (
-    <aside className={sidebarClasses}>
-      <div className="p-2 border-b border-[var(--color-border)] flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          {!isFolded && (
-            <Link to="/" className="flex items-center gap-2 group px-2">
-              <img src="/white-logo.png" alt="Logo" className="w-7 h-7" />
-              <h1 className="text-xl font-bold">AI Tutor</h1>
-            </Link>
+  const renderConversationItem = useCallback((conversation: Conversation) => {
+    const isActive = currentConversationId === conversation.id;
+    const isPinned = conversation.is_pinned;
+    const isEditing = editingId === conversation.id;
+    
+    return (
+      <div
+        key={conversation.id}
+        className={`group relative flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+          isActive 
+            ? 'bg-[var(--color-accent-bg)] text-[var(--color-bg)]' 
+            : 'hover:bg-[var(--color-border)]'
+        }`}
+        onClick={() => !isEditing && onSelectConversation(conversation.id)}
+      >
+        {/* Pin indicator */}
+        {isPinned && !isFolded && (
+          <Star className="w-3 h-3 text-yellow-400 fill-current flex-shrink-0" />
+        )}
+        
+        <div className="flex-1 min-w-0">
+          {isEditing ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                className="w-full px-2 py-1 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveRename(conversation.id);
+                  } else if (e.key === 'Escape') {
+                    handleCancelRename();
+                  }
+                }}
+                autoFocus
+              />
+              <div className="flex gap-1">
+                <button
+                  onClick={() => handleSaveRename(conversation.id)}
+                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleCancelRename}
+                  className="px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm truncate ${isPinned ? 'font-medium' : ''} ${isFolded ? 'hidden' : ''}`}>
+                  {conversation.title}
+                </span>
+              </div>
+              {!isFolded && (
+                <div className="text-xs text-[var(--color-text-secondary)] mt-1">
+                  {formatDate(conversation.updated_at)}
+                </div>
+              )}
+            </>
           )}
-          <div className="flex items-center gap-1 ml-auto">
-            {onToggleFold && (
-              <button 
-                onClick={onToggleFold} 
-                className="p-2 btn-icon hidden lg:block" 
-                title={isFolded ? 'Expand' : 'Collapse'}
-              >
-                {isFolded ? <ChevronRight /> : <ChevronLeft />}
-              </button>
-            )}
-            <button 
-              onClick={onCloseSidebar} 
-              className="p-2 btn-icon lg:hidden" 
-              title="Close sidebar"
-            >
-              <X />
-            </button>
-          </div>
         </div>
         
-        <button 
-          onClick={onNewConversation} 
-          className={`w-full flex items-center ${isFolded ? 'justify-center' : 'justify-start'} gap-2 px-3 py-2 bg-[var(--color-accent-bg)] hover:bg-[var(--color-accent-bg-hover)] rounded-lg transition-colors text-black font-semibold`}
-        >
-          <Plus className="w-4 h-4" />
-          {!isFolded && <span>New chat</span>}
-        </button>
+        {/* Action buttons */}
+        {!isEditing && !isFolded && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRename(conversation.id, conversation.title);
+              }}
+              className="p-1 hover:bg-[var(--color-sidebar)] rounded text-xs"
+              title="Rename"
+            >
+              <Edit2 className="w-3 h-3" />
+            </button>
+            
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete('conversation', conversation.id);
+              }}
+              className="p-1 hover:bg-red-500/20 rounded text-xs text-red-400 hover:text-red-300"
+              title="Delete"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
+    );
+  }, [currentConversationId, onSelectConversation, editingId, editingTitle, isFolded, handleRename, handleDelete, handleSaveRename, handleCancelRename]);
 
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col">
-        {!isFolded && !isPanelViewActive && (
+  const renderNoteItem = useCallback((note: Note) => {
+    const isActive = currentNoteId === note.id;
+    
+    return (
+      <div
+        key={note.id}
+        className={`group relative flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+          isActive 
+            ? 'bg-[var(--color-accent-bg)] text-[var(--color-bg)]' 
+            : 'hover:bg-[var(--color-border)]'
+        }`}
+        onClick={() => onSelectNote(note.id)}
+      >
+        <Bookmark className="w-4 h-4 text-blue-400 flex-shrink-0" />
+        
+        {!isFolded && (
           <>
-            <div className="flex items-center gap-1 p-1 bg-[var(--color-card)] rounded-lg mb-2">
-              <button 
-                onClick={() => setView('chats')} 
-                className={`flex-1 btn-tab ${view === 'chats' ? 'active' : ''}`}
-              >
-                Chats
-              </button>
-              <button 
-                onClick={() => setView('notes')} 
-                className={`flex-1 btn-tab ${view === 'notes' ? 'active' : ''}`}
-              >
-                Notes
-              </button>
-              {userProfile?.role === 'student' && (
-                <button 
-                  onClick={() => setView('quizzes')} 
-                  className={`flex-1 btn-tab ${view === 'quizzes' ? 'active' : ''}`}
-                >
-                  Quizzes
-                </button>
-              )}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm truncate font-medium">
+                {note.title}
+              </div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1 flex items-center gap-2">
+                {formatDate(note.created_at)}
+                {note.source_conversation_id && (
+                  <span className="px-1 py-0.5 bg-[var(--color-border)] rounded text-xs">
+                    From Chat
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="relative mb-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input 
-                type="text" 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-                placeholder={`Search ${view}...`} 
-                className="w-full bg-[var(--color-card)] rounded-lg pl-9 pr-3 py-1.5 text-sm" 
-              />
+            
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete('note', note.id);
+                }}
+                className="p-1 hover:bg-red-500/20 rounded text-xs text-red-400 hover:text-red-300"
+                title="Delete"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
             </div>
           </>
         )}
-        
-        {!isPanelViewActive && (
-          <>
-            {view === 'chats' && filteredConversations.map(c => (
-              <div 
-                key={c.id} 
-                onClick={() => onSelectConversation(c.id)} 
-                className={`group flex items-center gap-2 ${isFolded ? 'justify-center p-2' : 'p-2.5'} rounded-lg cursor-pointer ${currentConversationId === c.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`} 
-                title={isFolded ? c.title : undefined}
-              >
-                <MessageSquare className="w-4 h-4 shrink-0" />
-                {!isFolded && (
-                  <>
-                    {editingId === c.id ? (
-                      <input 
-                        type="text" 
-                        value={editingTitle} 
-                        onChange={(e) => setEditingTitle(e.target.value)} 
-                        onBlur={handleSaveEdit} 
-                        onKeyDown={handleKeyDown} 
-                        className="flex-1 text-sm bg-transparent border-b border-gray-500 focus:outline-none" 
-                        autoFocus 
-                        onClick={(e) => e.stopPropagation()} 
-                      />
-                    ) : (
-                      <span className="flex-1 text-sm font-semibold truncate">{c.title}</span>
-                    )}
-                    <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleStartEditing(c); }} 
-                        className="p-1 btn-icon"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteConversation(c.id); }} 
-                        className="p-1 btn-icon text-red-400 hover:bg-red-900/20"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            
-            {view === 'notes' && !isFolded && filteredNotes.map(n => (
-              <div 
-                key={n.id} 
-                onClick={() => onSelectNote(n.id)} 
-                className={`group p-2.5 rounded-lg cursor-pointer ${currentNoteId === n.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-sm font-semibold truncate pr-2">{n.title}</span>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onDeleteNote(n.id); }} 
-                    className="p-1 btn-icon text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <p className="text-xs opacity-70 mt-1 line-clamp-2">{n.content}</p>
-              </div>
-            ))}
+      </div>
+    );
+  }, [currentNoteId, onSelectNote, handleDelete, isFolded]);
 
-            {view === 'quizzes' && !isFolded && filteredQuizzes.map(q => (
-              <div
-                key={q.id}
-                onClick={() => onSelectAssignedQuiz(q)}
-                className="group p-3 rounded-lg cursor-pointer hover:bg-[var(--color-card)]"
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-sm font-semibold truncate pr-2">{q.generated_quizzes.topic}</span>
-                  {q.completed_at ? (
-                    <span className="text-xs font-bold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                      <CheckCircle size={12}/> Completed
-                    </span>
-                  ) : (
-                    <span className="text-xs font-bold text-yellow-400 bg-yellow-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                      <Clock size={12}/> To Do
-                    </span>
+  const renderSidebarContent = () => {
+    if (activeView === 'admin' || activeView === 'dashboard') {
+      return (
+        <div className="p-4">
+          <div className="flex items-center gap-3 mb-6">
+            <button
+              onClick={onSwitchToChatView}
+              className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              {!isFolded && 'Back to Chat'}
+            </button>
+          </div>
+          {!isFolded && (
+            <h2 className="text-lg font-semibold mb-4">
+              {activeView === 'admin' ? 'Admin Panel' : 'Teacher Dashboard'}
+            </h2>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 overflow-y-auto scroll-container">
+        {/* Conversations Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            {!isFolded && (
+              <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
+                Conversations
+              </h3>
+            )}
+            <button
+              onClick={onNewConversation}
+              className="p-1 hover:bg-[var(--color-border)] rounded"
+              title="New Conversation"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-1">
+            {conversations.length === 0 ? (
+              !isFolded && (
+                <div className="text-xs text-[var(--color-text-placeholder)] text-center py-4">
+                  No conversations yet
+                </div>
+              )
+            ) : (
+              conversations.map(renderConversationItem)
+            )}
+          </div>
+        </div>
+
+        {/* Notes Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            {!isFolded ? (
+              <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
+                Notes
+              </h3>
+            ) : (
+              <div className="w-full flex justify-center">
+                <BookmarkCheck className="w-4 h-4 text-[var(--color-text-placeholder)]" />
+              </div>
+            )}
+          </div>
+          
+          <div className="space-y-1">
+            {notes.length === 0 ? (
+              !isFolded && (
+                <div className="text-xs text-[var(--color-text-placeholder)] text-center py-4">
+                  No notes saved yet
+                </div>
+              )
+            ) : (
+              notes.map(renderNoteItem)
+            )}
+          </div>
+        </div>
+
+        {/* Assigned Quizzes Section (for students) */}
+        {userProfile?.role === 'student' && assignedQuizzes.length > 0 && (
+          <div className="mb-6">
+            {!isFolded ? (
+              <h3 className="text-sm font-medium text-[var(--color-text-secondary)] mb-3">
+                Assigned Quizzes
+              </h3>
+            ) : (
+              <div className="w-full flex justify-center mb-3">
+                <ClipboardCheck className="w-4 h-4 text-[var(--color-text-placeholder)]" />
+              </div>
+            )}
+            <div className="space-y-1">
+              {assignedQuizzes.map((assignment) => (
+                <div
+                  key={assignment.id}
+                  className={`group relative flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                    assignment.completed_at ? 'opacity-60' : 'hover:bg-[var(--color-border)]'
+                  }`}
+                  onClick={() => !assignment.completed_at && onSelectAssignedQuiz(assignment)}
+                >
+                  <ClipboardCheck className={`w-4 h-4 flex-shrink-0 ${
+                    assignment.completed_at ? 'text-green-400' : 'text-blue-400'
+                  }`} />
+                  
+                  {!isFolded && (
+                    <>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate">
+                          {assignment.generated_quizzes.topic}
+                        </div>
+                        <div className="text-xs text-[var(--color-text-secondary)] mt-1">
+                          {assignment.completed_at ? (
+                            <span className="text-green-400">
+                              Completed: {assignment.score}/{assignment.total_questions}
+                            </span>
+                          ) : assignment.due_at ? (
+                            `Due: ${formatDate(new Date(assignment.due_at))}`
+                          ) : (
+                            'No deadline'
+                          )}
+                        </div>
+                      </div>
+                      
+                      {assignment.completed_at && (
+                        <Check className="w-4 h-4 text-green-400" />
+                      )}
+                    </>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Assigned by: <span className="font-medium">{q.profiles.full_name || 'Teacher'}</span>
-                </p>
-                {q.completed_at && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Score: <span className="font-bold text-white">{q.score}/{q.total_questions}</span>
-                  </p>
-                )}
-              </div>
-            ))}
-          </>
-        )}
-
-        {activeView === 'dashboard' && !isFolded && (
-          <div className="text-center py-8 px-2">
-            <LayoutDashboard className="w-12 h-12 mx-auto mb-4 text-blue-400" />
-            <h3 className="text-lg font-semibold mb-2">Dashboard Active</h3>
-            <p className="text-sm text-gray-400">Viewing student progress dashboard.</p>
-          </div>
-        )}
-        
-        {activeView === 'admin' && !isFolded && (
-          <div className="text-center py-8 px-2">
-            <Shield className="w-12 h-12 mx-auto mb-4 text-blue-400" />
-            <h3 className="text-lg font-semibold mb-2">Admin Panel Active</h3>
-            <p className="text-sm text-gray-400">Managing users and system settings.</p>
+              ))}
+            </div>
           </div>
         )}
       </div>
+    );
+  };
 
-      <div className="p-2 border-t border-[var(--color-border)] mt-auto space-y-2">
-        {!isFolded && userProfile && (
-          <div className="p-2 text-sm text-left">
-            <p className="font-semibold truncate">{userProfile.full_name || userProfile.email}</p>
-            <p className="text-xs text-gray-400 capitalize">{userProfile.role}</p>
+  return (
+    <div className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isFolded ? 'sidebar-folded' : ''}`}>
+      {/* Header */}
+      <div className="sidebar-header">
+        <div className="flex items-center justify-between">
+          {!isFolded && (
+            <div className="flex items-center gap-3">
+              <img src="/white-logo.png" alt="AI Tutor" className="w-6 h-6" />
+              <h1 className="text-lg font-bold text-[var(--color-text-primary)]">
+                AI Tutor
+              </h1>
+            </div>
+          )}
+          
+          <div className="flex items-center gap-1">
+            {/* Desktop fold/unfold button */}
+            <button
+              onClick={onToggleFold}
+              className="hidden lg:flex interactive-button p-2 hover:bg-[var(--color-border)] rounded"
+              title={isFolded ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isFolded ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+            
+            {/* Mobile close button */}
+            <button
+              onClick={onCloseSidebar}
+              className="lg:hidden interactive-button p-2 hover:bg-[var(--color-border)] rounded"
+              title="Close sidebar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="sidebar-content">
+        {renderSidebarContent()}
+      </div>
+
+      {/* Footer */}
+      <div className="sidebar-footer">
+        {/* User Profile & Role-based buttons */}
+        {userProfile && !isFolded && (
+          <div className="mb-3 p-3 bg-[var(--color-card)] rounded-lg">
+            <div className="text-sm font-medium text-[var(--color-text-primary)] mb-1">
+              {userProfile.full_name}
+            </div>
+            <div className="text-xs text-[var(--color-text-secondary)] mb-2">
+              {userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)}
+            </div>
+            
+            {/* Role-specific buttons */}
+            {userProfile.role === 'admin' && (
+              <button
+                onClick={onToggleAdminPanel}
+                className={`w-full flex items-center gap-2 p-2 text-sm rounded transition-colors ${
+                  activeView === 'admin'
+                    ? 'bg-[var(--color-accent-bg)] text-[var(--color-bg)]'
+                    : 'hover:bg-[var(--color-border)]'
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                Admin Panel
+              </button>
+            )}
+            
+            {userProfile.role === 'teacher' && (
+              <button
+                onClick={onToggleTeacherDashboard}
+                className={`w-full flex items-center gap-2 p-2 text-sm rounded transition-colors ${
+                  activeView === 'dashboard'
+                    ? 'bg-[var(--color-accent-bg)] text-[var(--color-bg)]'
+                    : 'hover:bg-[var(--color-border)]'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4" />
+                Dashboard
+              </button>
+            )}
           </div>
         )}
-        
-        <div className="space-y-1">
-          <button 
-            onClick={onSwitchToChatView}
-            className={`nav-btn ${activeView === 'chat' ? 'active' : ''}`}
-          >
-            <MessageSquare size={18}/>
-            {!isFolded && 'Chats'}
-          </button>
-          
-          {userProfile?.role === 'teacher' && onToggleTeacherDashboard && (
-            <button 
-              onClick={onToggleTeacherDashboard} 
-              className={`nav-btn w-full ${activeView === 'dashboard' ? 'active' : ''}`}
+
+        {/* Model Selection */}
+        {!isFolded && (
+          <div className="mb-3">
+            <label className="text-xs text-[var(--color-text-secondary)] mb-2 block">
+              AI Model
+            </label>
+            <select
+              value={settings.selectedModel}
+              onChange={(e) => onModelChange(e.target.value as APISettings['selectedModel'])}
+              className="w-full p-2 text-sm bg-[var(--color-card)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-accent-bg)]"
             >
-              <LayoutDashboard size={18}/>
-              {!isFolded && 'Dashboard'}
-            </button>
-          )}
-          
-          {userProfile?.role === 'admin' && onToggleAdminPanel && (
-            <button 
-              onClick={onToggleAdminPanel} 
-              className={`nav-btn w-full ${activeView === 'admin' ? 'active' : ''}`}
-            >
-              <Shield size={18}/>
-              {!isFolded && 'Admin Panel'}
-            </button>
-          )}
-          
-          <button onClick={onOpenSettings} className="nav-btn w-full">
-            <Settings size={18}/>
-            {!isFolded && 'Settings'}
-          </button>
-        </div>
-        
-        <button 
-          onClick={logout} 
-          className={`w-full flex items-center gap-2 p-2 rounded-lg text-red-400 hover:bg-red-900/30 font-semibold transition-colors ${isFolded ? 'justify-center' : ''}`}
+              <option value="google">Google Gemini</option>
+              <option value="zhipu">ZhipuAI GLM</option>
+              <option value="mistral-small">Mistral Small</option>
+              <option value="mistral-codestral">Mistral Codestral</option>
+            </select>
+          </div>
+        )}
+
+        {/* Settings Button */}
+        <button
+          onClick={onOpenSettings}
+          className="interactive-button w-full flex items-center gap-3 p-3 hover:bg-[var(--color-border)] rounded-lg transition-colors"
+          title="Settings"
         >
-          <LogOut className="w-4 h-4" />
-          {!isFolded && <span>Logout</span>}
+          <Settings className="w-4 h-4 text-[var(--color-text-secondary)]" />
+          {!isFolded && (
+            <span className="text-sm text-[var(--color-text-secondary)]">
+              Settings
+            </span>
+          )}
         </button>
       </div>
-    </aside>
+    </div>
   );
 }
