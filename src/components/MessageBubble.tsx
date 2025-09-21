@@ -112,18 +112,17 @@ export function MessageBubble({
     if (!user || flagged) return;
     if (window.confirm("Are you sure you want to flag this message for teacher review?")) {
         try {
-            await flagMessage({
+            // **FIX**: Send only the required data to the database
+            const flagPayload = {
                 message_content: message.content,
-                message_role: message.role,
-                conversation_id: message.conversation_id,
-                flagged_by_user_id: user.id,
-                student_id: message.user_id,
-            });
+                student_id: message.user_id, // Links the message to the student who owns the conversation
+            };
+            await flagMessage(flagPayload);
             setFlagged(true);
             alert("Message flagged for review.");
         } catch (error) {
             console.error("Error flagging message:", error);
-            alert("Could not flag message.");
+            alert("Could not flag message. Please check the console for details.");
         }
     }
   };
