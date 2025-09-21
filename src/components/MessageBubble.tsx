@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Smile, Sparkles, Copy, Check, Bookmark, Download, Flag, Search } from 'lucide-react';
+import { Smile, Sparkles, Copy, Check, Bookmark, Download, Flag } from 'lucide-react';
 import { Message } from '../types';
 import { flagMessage } from '../services/supabaseService';
 import { useAuth } from '../hooks/useAuth';
@@ -51,7 +51,7 @@ const highlightSearchTerm = (text: string, searchTerm: string) => {
   if (!searchTerm) return text;
   
   const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-  return text.replace(regex, '<mark class="bg-yellow-300 text-black">$1</mark>');
+  return text.replace(regex, '<mark style="background-color: #fbbf24; color: #000;">$1</mark>');
 };
 
 export function MessageBubble({
