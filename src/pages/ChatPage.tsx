@@ -8,7 +8,7 @@ import { AdminPanelComponent } from '../components/AdminPanelComponent';
 import { TeacherDashboardComponent } from '../components/TeacherDashboardComponent';
 import { Conversation, Message, APISettings, Note, StudySession, QuizAssignmentWithDetails } from '../types';
 import { generateId, generateConversationTitle } from '../utils/helpers';
-import { Menu } from 'lucide-react';
+import { Menu, ArrowLeft } from 'lucide-react';
 import { storageUtils } from '../utils/storage';
 import { aiService } from '../services/aiService';
 import { useAuth } from '../hooks/useAuth';
@@ -46,6 +46,17 @@ export default function ChatPage() {
       return false;
     }
   });
+
+  // Initialize aiService with settings
+  useEffect(() => {
+    aiService.updateSettings(settings);
+  }, []);
+
+  // Save settings to localStorage
+  useEffect(() => {
+    storageUtils.saveSettings(settings);
+    aiService.updateSettings(settings);
+  }, [settings]);
 
   const handleToggleAdminPanel = useCallback(() => {
     if (profile?.role === 'admin') {
@@ -143,8 +154,10 @@ export default function ChatPage() {
     }
   }, [currentConversationId, conversations]);
 
-  useEffect(() => { storageUtils.saveSettings(settings); }, [settings]);
-  useEffect(() => { localStorage.setItem('ai-tutor-sidebar-folded', JSON.stringify(sidebarFolded)); }, [sidebarFolded]);
+  useEffect(() => {
+    localStorage.setItem('ai-tutor-sidebar-folded', JSON.stringify(sidebarFolded));
+  }, [sidebarFolded]);
+
   useEffect(() => {
     const handleResize = () => setSidebarOpen(window.innerWidth >= 1024);
     handleResize();
@@ -464,7 +477,6 @@ export default function ChatPage() {
         onRenameConversation={handleRenameConversation}
         onDeleteNote={handleDeleteNote}
         onOpenSettings={() => setSettingsOpen(true)}
-        settings={settings}
         onCloseSidebar={() => setSidebarOpen(false)}
         isFolded={sidebarFolded}
         onToggleFold={() => setSidebarFolded(!sidebarFolded)}
@@ -491,7 +503,18 @@ export default function ChatPage() {
         ) : showTeacherDashboard ? (
           <TeacherDashboardComponent />
         ) : currentNoteId ? (
-          <NoteView note={currentNote || null} />
+          <>
+            <button
+              onClick={() => {
+                setCurrentNoteId(null);
+                setCurrentConversationId(conversations[0]?.id || null);
+              }}
+              className="m-4 flex items-center gap-2 text-sm text-gray-400 hover:text-white"
+            >
+              <ArrowLeft size={16} /> Back to Chats
+            </button>
+            <NoteView note={currentNote || null} />
+          </>
         ) : (
           <ChatArea
             conversation={currentConversation}
