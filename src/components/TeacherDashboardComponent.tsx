@@ -2,13 +2,28 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import * as db from '../services/supabaseService';
 import { aiService } from '../services/aiService';
-import { Profile, FlaggedMessage, GeneratedQuiz, Assignment, StudentAssignmentDetails } from '../types';
+import { Profile, FlaggedMessage, GeneratedQuiz } from '../types';
 import { 
-  BookOpen, MessageSquare, CheckCircle, Users, GraduationCap, TrendingUp, RefreshCw, AlertTriangle, User, Flag, ClipboardCheck, PlusCircle, X, Loader2, Share2, Eye, Trash2, Award, FileText, Send, Edit, Sparkles, UserCheck
+  BookOpen, 
+  MessageSquare, 
+  CheckCircle, 
+  Users, 
+  GraduationCap,
+  TrendingUp,
+  RefreshCw,
+  AlertTriangle,
+  User,
+  Flag,
+  ClipboardCheck,
+  PlusCircle,
+  X,
+  Loader2,
+  Share2,
+  Eye,
+  Trash2,
+  Award
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 interface StudentStats {
   questionCount: number;
@@ -25,7 +40,6 @@ export function TeacherDashboardComponent() {
   const [students, setStudents] = useState<StudentWithStats[]>([]);
   const [flaggedMessages, setFlaggedMessages] = useState<FlaggedMessage[]>([]);
   const [generatedQuizzes, setGeneratedQuizzes] = useState<GeneratedQuiz[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,48 +59,77 @@ export function TeacherDashboardComponent() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewQuiz, setReviewQuiz] = useState<GeneratedQuiz | null>(null);
 
-  // NEW MODAL STATES FOR ASSIGNMENTS
-  const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
-  const [assignmentTitle, setAssignmentTitle] = useState('');
-  const [assignmentDesc, setAssignmentDesc] = useState('');
-  
-  const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState(false);
-  const [viewingAssignment, setViewingAssignment] = useState<Assignment | null>(null);
-  const [submissions, setSubmissions] = useState<StudentAssignmentDetails[]>([]);
-
-  const [isGradingModalOpen, setIsGradingModalOpen] = useState(false);
-  const [gradingSubmission, setGradingSubmission] = useState<StudentAssignmentDetails | null>(null);
-  const [feedback, setFeedback] = useState('');
-  const [grade, setGrade] = useState<number | ''>('');
-  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
-
-
   const fetchData = async () => {
     const userId = user?.id || profile?.id;
-    if (!userId) return;
+    
+    if (!userId) {
+      console.log('No user ID available for fetching teacher data');
+      return;
+    }
+    
+    console.log('Fetching data for teacher:', userId);
     setLoading(true);
     setError(null);
+    
     try {
-      const [assignedStudents, messages, quizzes, teacherAssignments] = await Promise.all([
-        db.getStudentsForTeacher(userId),
-        db.getFlaggedMessagesForTeacher(userId),
-        db.getGeneratedQuizzesForTeacher(userId),
-        db.getAssignmentsForTeacher(userId)
+      console.log('Calling getStudentsForTeacher...');
+      const studentsPromise = db.getStudentsForTeacher(userId).catch(err => {
+        console.error('Error fetching students:', err);
+        return [];
+      });
+      
+      console.log('Calling getFlaggedMessagesForTeacher...');
+      const messagesPromise = db.getFlaggedMessagesForTeacher(userId).catch(err => {
+        console.error('Error fetching flagged messages:', err);
+        return [];
+      });
+
+      console.log('Calling getGeneratedQuizzesForTeacher...');
+      const quizzesPromise = db.getGeneratedQuizzesForTeacher(userId).catch(err => {
+        console.error('Error fetching generated quizzes:', err);
+        return [];
+      });
+
+      const [assignedStudents, messages, quizzes] = await Promise.all([
+        studentsPromise,
+        messagesPromise,
+        quizzesPromise
       ]);
 
+      console.log('Assigned students:', assignedStudents);
+      console.log('Flagged messages:', messages);
+      console.log('Generated quizzes:', quizzes);
+
+      // Fetch stats for each student with improved quiz data
       const studentsWithStats = await Promise.all(
         assignedStudents.map(async (student) => {
-          const stats = await db.getStudentStatsImproved(student.id);
-          return { ...student, stats };
+          try {
+            console.log('Fetching stats for student:', student.id);
+            const stats = await db.getStudentStatsImproved(student.id);
+            console.log('Stats for', student.full_name, ':', stats);
+            return { ...student, stats };
+          } catch (err) {
+            console.error(`Error fetching stats for student ${student.id}:`, err);
+            return { 
+              ...student, 
+              stats: { 
+                questionCount: 0, 
+                quizAttempts: 0, 
+                averageScore: 0 
+              } 
+            };
+          }
         })
       );
+
+      console.log('Students with stats:', studentsWithStats);
       
       setStudents(studentsWithStats);
       setFlaggedMessages(messages);
       setGeneratedQuizzes(quizzes);
-      setAssignments(teacherAssignments);
-
+      
     } catch (error: any) {
+      console.error('Error in fetchData:', error);
       setError(error.message || "Failed to load dashboard data.");
     } finally {
       setLoading(false);
@@ -94,8 +137,11 @@ export function TeacherDashboardComponent() {
   };
 
   useEffect(() => {
-    if (user?.id || profile?.id) {
+    const userId = user?.id || profile?.id;
+    if (userId) {
       fetchData();
+    } else {
+      console.log('User/profile not available yet, waiting...');
     }
   }, [user?.id, profile?.id]);
   
@@ -155,6 +201,7 @@ export function TeacherDashboardComponent() {
       setIsAssignModalOpen(false);
       setSelectedQuiz(null);
       setSelectedStudents([]);
+      // Refresh data to update assignment counts
       await fetchData();
     } catch (error: any) {
       console.error('Assignment error:', error);
@@ -183,89 +230,6 @@ export function TeacherDashboardComponent() {
       alert(`Failed to delete quiz: ${error.message}`);
     }
   };
-  
-  const handleOpenAssignmentModal = () => {
-    setAssignmentTitle('');
-    setAssignmentDesc('');
-    setSelectedStudents([]);
-    setIsAssignmentModalOpen(true);
-  };
-
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignmentTitle.trim() || !assignmentDesc.trim() || selectedStudents.length === 0) {
-        alert("Title, description, and at least one student are required.");
-        return;
-    }
-    const teacherId = user?.id || profile?.id;
-    if (!teacherId) return;
-
-    setIsAssigning(true);
-    try {
-        await db.createAssignment({
-            teacher_id: teacherId,
-            title: assignmentTitle,
-            description: assignmentDesc,
-            type: 'essay',
-            due_at: null,
-            quiz_id: null
-        }, selectedStudents);
-        
-        setIsAssignmentModalOpen(false);
-        await fetchData(); // Refresh data
-    } catch (err: any) {
-        alert("Failed to create assignment: " + err.message);
-    } finally {
-        setIsAssigning(false);
-    }
-  };
-  
-  const handleViewSubmissions = async (assignment: Assignment) => {
-    setViewingAssignment(assignment);
-    setIsSubmissionsModalOpen(true);
-    setSubmissions([]); // Clear previous
-    const subs = await db.getSubmissionsForAssignment(assignment.id);
-    setSubmissions(subs);
-  };
-
-  const handleGradeSubmission = (submission: StudentAssignmentDetails) => {
-    setGradingSubmission(submission);
-    setFeedback(submission.feedback || '');
-    setGrade(submission.grade || '');
-    setIsGradingModalOpen(true);
-  };
-
-  const handleGetAIFeedback = async () => {
-    if (!gradingSubmission || !viewingAssignment) return;
-    setIsGeneratingFeedback(true);
-    try {
-      const aiFeedback = await aiService.provideFeedbackOnSubmission(viewingAssignment, gradingSubmission);
-      setFeedback(aiFeedback);
-    } catch (err: any) {
-      alert("Failed to get AI feedback: " + err.message);
-    } finally {
-      setIsGeneratingFeedback(false);
-    }
-  };
-
-  const handleSaveGrade = async () => {
-    if (!gradingSubmission || grade === '' || feedback.trim() === '') {
-        alert("Feedback and a numeric grade are required.");
-        return;
-    }
-    
-    try {
-      await db.gradeAssignment(gradingSubmission.id, feedback, Number(grade));
-      setIsGradingModalOpen(false);
-      if (viewingAssignment) {
-        const subs = await db.getSubmissionsForAssignment(viewingAssignment.id);
-        setSubmissions(subs);
-      }
-    } catch (err: any) {
-      alert("Failed to save grade: " + err.message);
-    }
-  };
-
 
   const toggleStudentSelection = (studentId: string) => {
     setSelectedStudents(prev => 
@@ -278,7 +242,9 @@ export function TeacherDashboardComponent() {
   const totals = useMemo(() => ({
     questions: students.reduce((acc, s) => acc + s.stats.questionCount, 0),
     quizzes: students.reduce((acc, s) => acc + s.stats.quizAttempts, 0),
-    average: students.length > 0 ? students.reduce((acc, s) => acc + s.stats.averageScore, 0) / students.length : 0,
+    average: students.length > 0 
+      ? students.reduce((acc, s) => acc + s.stats.averageScore, 0) / students.length 
+      : 0,
   }), [students]);
 
   const ProgressBar = ({ score }: { score: number }) => (
@@ -296,23 +262,24 @@ export function TeacherDashboardComponent() {
     </div>
   );
 
-  // ================== FIX START ==================
   if (!user && !profile) {
     return (
-      <div className="h-full overflow-y-auto bg-grid-slate-900 flex items-center justify-center">
-        <div className="text-center p-12">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500" />
-          <p className="text-gray-400 mt-2">Loading user data...</p>
+      <div className="h-full overflow-y-auto bg-grid-slate-900">
+        <div className="p-6 space-y-8 max-w-7xl mx-auto">
+          <div className="text-center p-12">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500" />
+            <p className="text-gray-400 mt-2">Loading user data...</p>
+          </div>
         </div>
       </div>
     );
   }
-  // =================== FIX END ===================
 
   return (
     <>
     <div className="h-full overflow-y-auto bg-grid-slate-900">
       <div className="p-6 space-y-8 max-w-7xl mx-auto">
+        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
             <GraduationCap size={28} className="text-blue-500" /> 
@@ -327,6 +294,8 @@ export function TeacherDashboardComponent() {
             </p>
           )}
         </div>
+
+        {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           <div className="stats-card">
             <Users size={24} className="text-blue-500 mb-3"/>
@@ -352,33 +321,25 @@ export function TeacherDashboardComponent() {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-6">
+            {/* Class Tools */}
             <div className="admin-card">
-              <h3 className="card-header"><ClipboardCheck size={18} /> Class Tools</h3>
-              <div className="p-6 space-y-3">
-                <button onClick={() => setIsQuizModalOpen(true)} className="btn-primary w-full"><PlusCircle size={16} /> Generate Quiz</button>
-                <button onClick={handleOpenAssignmentModal} className="btn-primary w-full bg-white/5 text-white hover:bg-white/10 border border-white/10"><FileText size={16} /> Create Assignment</button>
+              <h3 className="card-header">
+                <ClipboardCheck size={18} /> Class Tools
+              </h3>
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-gray-400">
+                  Generate a quiz on any topic for your class to complete.
+                </p>
+                <button 
+                  onClick={() => setIsQuizModalOpen(true)} 
+                  className="btn-primary w-full"
+                >
+                  <PlusCircle size={16} /> Generate New Quiz
+                </button>
               </div>
             </div>
-            
-            <div className="admin-card">
-              <h3 className="card-header">Assignments ({assignments.length})</h3>
-              <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-                {assignments.length > 0 ? (
-                  assignments.map(ass => (
-                    <div key={ass.id} className="bg-gray-900/50 p-3 rounded-lg">
-                      <p className="font-semibold text-white truncate">{ass.title}</p>
-                      <p className="text-xs text-gray-400 capitalize">{ass.type} &bull; {formatDate(new Date(ass.created_at))}</p>
-                      <button onClick={() => handleViewSubmissions(ass)} className="w-full mt-3 text-sm btn-secondary py-1.5">
-                        <UserCheck size={14}/> View Submissions
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500 text-center py-4">No assignments created yet.</p>
-                )}
-              </div>
-            </div>
-            
+
+            {/* Generated Quizzes */}
             <div className="admin-card">
               <h3 className="card-header">Generated Quizzes ({generatedQuizzes.length})</h3>
               <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
@@ -425,6 +386,7 @@ export function TeacherDashboardComponent() {
           </div>
 
           <div className="lg:col-span-2 space-y-8">
+            {/* Flagged Messages */}
             <div className="admin-card">
               <div className="card-header flex justify-between items-center">
                 <h3 className="flex items-center gap-3">
@@ -456,6 +418,7 @@ export function TeacherDashboardComponent() {
               </div>
             </div>
             
+            {/* Student Progress */}
             <div className="admin-card">
               <div className="card-header flex justify-between items-center">
                 <h3 className="flex items-center gap-3">
@@ -543,6 +506,7 @@ export function TeacherDashboardComponent() {
       </div>
     </div>
     
+    {/* Quiz Generation Modal */}
     {isQuizModalOpen && (
       <div 
         className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
@@ -604,6 +568,7 @@ export function TeacherDashboardComponent() {
       </div>
     )}
 
+    {/* Quiz Assignment Modal */}
     {isAssignModalOpen && selectedQuiz && (
       <div 
         className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
@@ -626,6 +591,7 @@ export function TeacherDashboardComponent() {
           </div>
           
           <div className="p-6 space-y-6">
+            {/* Students Selection */}
             <div>
               <label className="input-label mb-3">Select Students ({selectedStudents.length} selected)</label>
               {students.length === 0 ? (
@@ -666,6 +632,7 @@ export function TeacherDashboardComponent() {
               )}
             </div>
 
+            {/* Quiz Preview */}
             <div>
               <label className="input-label mb-2">Quiz Preview</label>
               <div className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-3 text-sm">
@@ -707,6 +674,7 @@ export function TeacherDashboardComponent() {
       </div>
     )}
 
+    {/* Quiz Review Modal */}
     {isReviewModalOpen && reviewQuiz && (
       <div 
         className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
@@ -790,116 +758,6 @@ export function TeacherDashboardComponent() {
             >
               Close Review
             </button>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {isAssignmentModalOpen && (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setIsAssignmentModalOpen(false)}>
-        <form onSubmit={handleCreateAssignment} className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><FileText size={20}/> Create New Assignment</h2>
-            <button type="button" onClick={() => setIsAssignmentModalOpen(false)} className="p-2 hover:bg-[var(--color-border)] rounded-lg"><X size={18}/></button>
-          </div>
-          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-            <div>
-              <label className="input-label">Title</label>
-              <input type="text" value={assignmentTitle} onChange={e => setAssignmentTitle(e.target.value)} placeholder="e.g., Essay on The Great Gatsby" required className="input-style"/>
-            </div>
-            <div>
-              <label className="input-label">Description / Prompt</label>
-              <textarea value={assignmentDesc} onChange={e => setAssignmentDesc(e.target.value)} placeholder="Provide clear instructions for the student." required className="input-style" rows={4}/>
-            </div>
-            <div>
-              <label className="input-label">Assign to Students ({selectedStudents.length} selected)</label>
-              <div className="space-y-2 max-h-48 overflow-y-auto border border-[var(--color-border)] rounded-lg p-3 bg-gray-900/20">
-                <button type="button" onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))} className="text-sm text-blue-400 hover:text-blue-300 mb-2">
-                  {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
-                </button>
-                {students.map(student => (
-                  <label key={student.id} className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer">
-                    <input type="checkbox" checked={selectedStudents.includes(student.id)} onChange={() => toggleStudentSelection(student.id)} className="rounded border-gray-600 text-blue-500 focus:ring-blue-500 focus:ring-2"/>
-                    <p className="text-white text-sm font-medium">{student.full_name}</p>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-end">
-            <button type="submit" disabled={isAssigning} className="btn-primary w-auto px-6 py-2">
-              {isAssigning ? <><Loader2 size={16} className="animate-spin mr-2"/> Creating...</> : 'Create & Assign'}
-            </button>
-          </div>
-        </form>
-      </div>
-    )}
-
-    {isSubmissionsModalOpen && viewingAssignment && (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setIsSubmissionsModalOpen(false)}>
-        <div className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><UserCheck size={20}/> Submissions for: {viewingAssignment.title}</h2>
-            <button onClick={() => setIsSubmissionsModalOpen(false)} className="p-2 hover:bg-[var(--color-border)] rounded-lg"><X size={18}/></button>
-          </div>
-          <div className="p-6 overflow-y-auto">
-            <div className="divide-y divide-[var(--color-border)]">
-              {submissions.map(sub => (
-                <div key={sub.id} className="py-3 flex justify-between items-center">
-                  <div>
-                    <p className="font-semibold text-white">{sub.profiles?.full_name || sub.profiles?.email}</p>
-                    <p className={`text-sm capitalize font-medium ${sub.status === 'graded' ? 'text-green-400' : sub.status === 'submitted' ? 'text-blue-400' : 'text-yellow-400'}`}>Status: {sub.status}</p>
-                    {sub.submitted_at && <p className="text-xs text-gray-500">Submitted: {formatDate(new Date(sub.submitted_at))}</p>}
-                  </div>
-                  <div>
-                    {sub.status === 'submitted' || sub.status === 'graded' ? (
-                      <button onClick={() => handleGradeSubmission(sub)} className="btn-secondary"><Edit size={14}/> {sub.status === 'graded' ? 'View/Edit Grade' : 'Grade'}</button>
-                    ) : (
-                      <span className="text-sm text-gray-500">Not Submitted</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {submissions.length === 0 && <p className="text-center py-8 text-gray-500">No submissions yet.</p>}
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {isGradingModalOpen && gradingSubmission && (
-      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setIsGradingModalOpen(false)}>
-        <div className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="p-4 border-b border-[var(--color-border)]">
-            <h2 className="text-xl font-bold text-white">Grading: {gradingSubmission.profiles?.full_name}</h2>
-            <p className="text-sm text-gray-400">Assignment: {viewingAssignment?.title}</p>
-          </div>
-          <div className="flex-1 flex gap-4 p-6 overflow-hidden">
-            <div className="w-1/2 flex flex-col">
-              <h3 className="font-semibold mb-2">Student Submission</h3>
-              <div className="flex-1 p-4 bg-gray-900/50 rounded-lg overflow-y-auto border border-[var(--color-border)]">
-                <pre className="text-white whitespace-pre-wrap text-sm">{gradingSubmission.submission_content}</pre>
-              </div>
-            </div>
-            <div className="w-1/2 flex flex-col">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="font-semibold">Feedback</h3>
-                <button onClick={handleGetAIFeedback} disabled={isGeneratingFeedback} className="btn-secondary">
-                  {isGeneratingFeedback ? <><Loader2 size={14} className="animate-spin mr-1.5"/> Working...</> : <><Sparkles size={14} className="mr-1.5"/> Get AI Feedback</>}
-                </button>
-              </div>
-              <div className="flex-1 flex flex-col gap-4">
-                <textarea value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="Enter feedback..." className="input-style flex-1 resize-none"/>
-                <div>
-                  <label className="input-label">Grade (0-100)</label>
-                  <input type="number" value={grade} onChange={e => setGrade(e.target.value === '' ? '' : Math.max(0, Math.min(100, parseInt(e.target.value))))} className="input-style"/>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-between items-center">
-            <button onClick={() => setIsGradingModalOpen(false)} className="btn-secondary">Cancel</button>
-            <button onClick={handleSaveGrade} className="btn-primary">Save Grade & Feedback</button>
           </div>
         </div>
       </div>
