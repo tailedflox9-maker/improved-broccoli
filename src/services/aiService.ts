@@ -1,4 +1,4 @@
-import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz, Assignment, StudentAssignmentDetails } from '../types';
+import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz } from '../types';
 import { generateId } from '../utils/helpers';
 import { supabase } from '../supabase';
 import * as db from './supabaseService';
@@ -208,53 +208,6 @@ class AiService {
 
     return savedQuiz;
   }
-  
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
-  public async provideFeedbackOnSubmission(assignment: Assignment, submission: StudentAssignmentDetails): Promise<string> {
-    if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured for feedback.');
-    if (!submission.submission_content) return "No submission content provided.";
-
-    const prompt = `You are an expert teacher providing feedback on a student's submission.
-    Your feedback should be constructive, encouraging, and specific.
-    Structure your feedback into three sections with markdown headings:
-    1.  **### What's Great** (Praise specific strengths of the submission).
-    2.  **### Areas for Improvement** (Point out specific weaknesses and explain WHY they are weaknesses).
-    3.  **### Actionable Next Steps** (Suggest concrete things the student can do to improve).
-    
-    Do NOT assign a grade. Keep the tone supportive.
-
-    **Assignment Details:**
-    *   **Title:** ${assignment.title}
-    *   **Description:** ${assignment.description}
-
-    **Student's Submission:**
-    ---
-    ${submission.submission_content}
-    ---
-    `;
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error providing feedback: ${response.status} - ${errorText}`);
-    }
-    const data = await response.json();
-    const feedbackText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!feedbackText) throw new Error('Invalid API response when generating feedback.');
-    
-    return feedbackText;
-  }
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 }
 
 export const aiService = new AiService();
