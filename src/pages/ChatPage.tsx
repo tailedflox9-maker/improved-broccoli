@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { ChatArea } from '../components/ChatArea';
+import { NoteView } from '../components/NoteView';
 import { SettingsModal } from '../components/SettingsModal';
 import { QuizModal } from '../components/QuizModal';
 import { AdminPanelComponent } from '../components/AdminPanelComponent';
@@ -33,6 +34,7 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
   
@@ -157,8 +159,21 @@ export default function ChatPage() {
     [conversations, currentConversationId]
   );
 
+  const currentNote = useMemo(() => 
+    notes.find(n => n.id === currentNoteId), 
+    [notes, currentNoteId]
+  );
+
   const handleSelectConversation = useCallback((id: string) => {
     setCurrentConversationId(id);
+    setCurrentNoteId(null); // Clear note selection when selecting conversation
+    handleSwitchToChatView();
+  }, [handleSwitchToChatView]);
+  
+  // NEW: Handle selecting a note
+  const handleSelectNote = useCallback((id: string) => {
+    setCurrentNoteId(id);
+    setCurrentConversationId(null); // Clear conversation selection when selecting note
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
   
@@ -402,6 +417,7 @@ export default function ChatPage() {
   const getActiveView = () => {
       if (showAdminPanel) return 'admin';
       if (showTeacherDashboard) return 'dashboard';
+      if (currentNoteId) return 'notes';
       return 'chat';
   }
 
@@ -441,10 +457,10 @@ export default function ChatPage() {
         assignedQuizzes={assignedQuizzes}
         activeView={getActiveView()}
         currentConversationId={currentConversationId}
-        currentNoteId={null}
+        currentNoteId={currentNoteId}
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
-        onSelectNote={() => {}}
+        onSelectNote={handleSelectNote}
         onSelectAssignedQuiz={handleSelectAssignedQuiz}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
@@ -477,6 +493,8 @@ export default function ChatPage() {
           <AdminPanelComponent onClose={handleToggleAdminPanel} />
         ) : showTeacherDashboard ? (
           <TeacherDashboardComponent />
+        ) : currentNoteId ? (
+          <NoteView note={currentNote || null} />
         ) : (
           <ChatArea
             conversation={currentConversation}
