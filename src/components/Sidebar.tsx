@@ -12,17 +12,14 @@ import {
   LogOut,
   LayoutDashboard,
   Shield,
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   ClipboardCheck,
   CheckCircle,
   Clock,
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+  FileText, // <-- NEW ICON
+  Send,     // <-- NEW ICON
+  Award,    // <-- NEW ICON
 } from 'lucide-react';
-import { Conversation, Note, Profile, APISettings, QuizAssignmentWithDetails } from '../types';
+import { Conversation, Note, Profile, APISettings, QuizAssignmentWithDetails, StudentAssignmentDetails } from '../types'; // <-- UPDATED
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
 import { formatDate } from '../utils/helpers';
@@ -30,26 +27,17 @@ import { formatDate } from '../utils/helpers';
 interface SidebarProps {
   conversations: Conversation[];
   notes: Note[];
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   assignedQuizzes: QuizAssignmentWithDetails[];
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
-  activeView: 'chat' | 'note' | 'admin' | 'dashboard';
+  assignments: StudentAssignmentDetails[]; // <-- NEW
+  activeView: 'chat' | 'note' | 'admin' | 'dashboard' | 'assignment'; // <-- UPDATED
   currentConversationId: string | null;
   currentNoteId: string | null;
+  currentAssignmentId: string | null; // <-- NEW
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
   onSelectNote: (id: string | null) => void;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   onSelectAssignedQuiz: (quiz: QuizAssignmentWithDetails) => void;
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
+  onSelectAssignment: (id: string) => void; // <-- NEW
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
   onDeleteNote: (id: string) => void;
@@ -70,13 +58,16 @@ export function Sidebar({
   conversations,
   notes,
   assignedQuizzes,
+  assignments, // <-- NEW
   activeView,
   currentConversationId,
   currentNoteId,
+  currentAssignmentId, // <-- NEW
   onNewConversation,
   onSelectConversation,
   onSelectNote,
   onSelectAssignedQuiz,
+  onSelectAssignment, // <-- NEW
   onDeleteConversation,
   onRenameConversation,
   onDeleteNote,
@@ -93,7 +84,7 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [view, setView] = useState<'chats' | 'notes' | 'quizzes'>('chats');
+  const [view, setView] = useState<'chats' | 'notes' | 'quizzes' | 'assignments'>('chats'); // <-- UPDATED
   const { logout } = useAuth();
 
   const filteredConversations = useMemo(() =>
@@ -116,6 +107,13 @@ export function Sidebar({
     ),
     [assignedQuizzes, searchQuery]
   );
+  
+  const filteredAssignments = useMemo(() => // <-- NEW
+    assignments.filter(a =>
+      a.assignments.title.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [assignments, searchQuery]
+  );
 
   const handleStartEditing = (conversation: Conversation) => {
     setEditingId(conversation.id);
@@ -134,8 +132,16 @@ export function Sidebar({
     else if (e.key === 'Escape') setEditingId(null);
   };
 
-  const isPanelViewActive = activeView === 'admin' || activeView === 'dashboard';
+  const isPanelViewActive = activeView === 'admin' || activeView === 'dashboard' || activeView === 'assignment';
   const sidebarClasses = `bg-[var(--color-sidebar)] flex flex-col h-full border-r border-[var(--color-border)] sidebar transition-all duration-300 ease-in-out fixed lg:static z-50 ${isSidebarOpen ? 'sidebar-open' : 'hidden lg:flex'} ${isFolded ? 'w-14' : 'w-64'}`;
+  
+  const getStatusIcon = (status: 'pending' | 'submitted' | 'graded') => {
+    switch (status) {
+      case 'pending': return <Clock size={12} className="text-yellow-400" />;
+      case 'submitted': return <Send size={12} className="text-blue-400" />;
+      case 'graded': return <Award size={12} className="text-green-400" />;
+    }
+  };
 
   return (
     <aside className={sidebarClasses}>
@@ -180,25 +186,12 @@ export function Sidebar({
         {!isFolded && !isPanelViewActive && (
           <>
             <div className="flex items-center gap-1 p-1 bg-[var(--color-card)] rounded-lg mb-2">
-              <button 
-                onClick={() => setView('chats')} 
-                className={`flex-1 btn-tab ${view === 'chats' ? 'active' : ''}`}
-              >
-                Chats
-              </button>
-              <button 
-                onClick={() => setView('notes')} 
-                className={`flex-1 btn-tab ${view === 'notes' ? 'active' : ''}`}
-              >
-                Notes
-              </button>
+              <button onClick={() => setView('chats')} className={`flex-1 btn-tab ${view === 'chats' ? 'active' : ''}`}>Chats</button>
               {userProfile?.role === 'student' && (
-                <button 
-                  onClick={() => setView('quizzes')} 
-                  className={`flex-1 btn-tab ${view === 'quizzes' ? 'active' : ''}`}
-                >
-                  Quizzes
-                </button>
+                <>
+                  <button onClick={() => setView('quizzes')} className={`flex-1 btn-tab ${view === 'quizzes' ? 'active' : ''}`}>Quizzes</button>
+                  <button onClick={() => setView('assignments')} className={`flex-1 btn-tab ${view === 'assignments' ? 'active' : ''}`}>Tasks</button>
+                </>
               )}
             </div>
             <div className="relative mb-2">
@@ -241,43 +234,14 @@ export function Sidebar({
                       <span className="flex-1 text-sm font-semibold truncate">{c.title}</span>
                     )}
                     <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleStartEditing(c); }} 
-                        className="p-1 btn-icon"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteConversation(c.id); }} 
-                        className="p-1 btn-icon text-red-400 hover:bg-red-900/20"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); handleStartEditing(c); }} className="p-1 btn-icon"><Edit size={14} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); onDeleteConversation(c.id); }} className="p-1 btn-icon text-red-400 hover:bg-red-900/20"><Trash2 size={14} /></button>
                     </div>
                   </>
                 )}
               </div>
             ))}
             
-            {view === 'notes' && !isFolded && filteredNotes.map(n => (
-              <div 
-                key={n.id} 
-                onClick={() => onSelectNote(n.id)} 
-                className={`group p-2.5 rounded-lg cursor-pointer ${currentNoteId === n.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className="text-sm font-semibold truncate pr-2">{n.title}</span>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onDeleteNote(n.id); }} 
-                    className="p-1 btn-icon text-red-400 hover:bg-red-900/20 opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <p className="text-xs opacity-70 mt-1 line-clamp-2">{n.content}</p>
-              </div>
-            ))}
-
             {view === 'quizzes' && !isFolded && filteredQuizzes.map(q => (
               <div
                 key={q.id}
@@ -287,28 +251,46 @@ export function Sidebar({
                 <div className="flex justify-between items-start">
                   <span className="text-sm font-semibold truncate pr-2">{q.generated_quizzes.topic}</span>
                   {q.completed_at ? (
-                    <span className="text-xs font-bold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                      <CheckCircle size={12}/> Completed
-                    </span>
+                    <span className="text-xs font-bold text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5"><CheckCircle size={12}/> Completed</span>
                   ) : (
-                    <span className="text-xs font-bold text-yellow-400 bg-yellow-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5">
-                      <Clock size={12}/> To Do
-                    </span>
+                    <span className="text-xs font-bold text-yellow-400 bg-yellow-900/50 px-2 py-0.5 rounded-full flex items-center gap-1.5"><Clock size={12}/> To Do</span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Assigned by: <span className="font-medium">{q.profiles.full_name || 'Teacher'}</span>
-                </p>
-                {q.completed_at && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Score: <span className="font-bold text-white">{q.score}/{q.total_questions}</span>
-                  </p>
-                )}
+                <p className="text-xs text-gray-400 mt-2">Assigned by: <span className="font-medium">{q.profiles.full_name || 'Teacher'}</span></p>
+                {q.completed_at && (<p className="text-xs text-gray-400 mt-1">Score: <span className="font-bold text-white">{q.score}/{q.total_questions}</span></p>)}
+              </div>
+            ))}
+
+            {view === 'assignments' && !isFolded && filteredAssignments.map(a => ( // <-- NEW
+              <div
+                key={a.id}
+                onClick={() => onSelectAssignment(a.id)}
+                className={`group p-3 rounded-lg cursor-pointer ${currentAssignmentId === a.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-sm font-semibold truncate pr-2">{a.assignments.title}</span>
+                  <span className={`text-xs font-bold capitalize px-2 py-0.5 rounded-full flex items-center gap-1.5 ${
+                    a.status === 'pending' ? 'bg-yellow-900/50 text-yellow-300' : 
+                    a.status === 'submitted' ? 'bg-blue-900/50 text-blue-300' : 'bg-green-900/50 text-green-300'}`
+                  }>
+                    {getStatusIcon(a.status)} {a.status}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-2 line-clamp-2">{a.assignments.description}</p>
+                {a.assignments.due_at && <p className="text-xs text-gray-500 mt-1">Due: {formatDate(new Date(a.assignments.due_at))}</p>}
               </div>
             ))}
           </>
         )}
 
+        {activeView === 'assignment' && !isFolded && ( // <-- NEW
+          <div className="text-center py-8 px-2">
+            <FileText className="w-12 h-12 mx-auto mb-4 text-blue-400" />
+            <h3 className="text-lg font-semibold mb-2">Assignment View</h3>
+            <p className="text-sm text-gray-400">Complete your task below.</p>
+          </div>
+        )}
+        
         {activeView === 'dashboard' && !isFolded && (
           <div className="text-center py-8 px-2">
             <LayoutDashboard className="w-12 h-12 mx-auto mb-4 text-blue-400" />
@@ -335,47 +317,13 @@ export function Sidebar({
         )}
         
         <div className="space-y-1">
-          <button 
-            onClick={onSwitchToChatView}
-            className={`nav-btn ${activeView === 'chat' ? 'active' : ''}`}
-          >
-            <MessageSquare size={18}/>
-            {!isFolded && 'Chats'}
-          </button>
-          
-          {userProfile?.role === 'teacher' && onToggleTeacherDashboard && (
-            <button 
-              onClick={onToggleTeacherDashboard} 
-              className={`nav-btn w-full ${activeView === 'dashboard' ? 'active' : ''}`}
-            >
-              <LayoutDashboard size={18}/>
-              {!isFolded && 'Dashboard'}
-            </button>
-          )}
-          
-          {userProfile?.role === 'admin' && onToggleAdminPanel && (
-            <button 
-              onClick={onToggleAdminPanel} 
-              className={`nav-btn w-full ${activeView === 'admin' ? 'active' : ''}`}
-            >
-              <Shield size={18}/>
-              {!isFolded && 'Admin Panel'}
-            </button>
-          )}
-          
-          <button onClick={onOpenSettings} className="nav-btn w-full">
-            <Settings size={18}/>
-            {!isFolded && 'Settings'}
-          </button>
+          <button onClick={onSwitchToChatView} className={`nav-btn ${activeView === 'chat' ? 'active' : ''}`}><MessageSquare size={18}/>{!isFolded && 'Chats'}</button>
+          {userProfile?.role === 'teacher' && onToggleTeacherDashboard && (<button onClick={onToggleTeacherDashboard} className={`nav-btn w-full ${activeView === 'dashboard' ? 'active' : ''}`}><LayoutDashboard size={18}/>{!isFolded && 'Dashboard'}</button>)}
+          {userProfile?.role === 'admin' && onToggleAdminPanel && (<button onClick={onToggleAdminPanel} className={`nav-btn w-full ${activeView === 'admin' ? 'active' : ''}`}><Shield size={18}/>{!isFolded && 'Admin Panel'}</button>)}
+          <button onClick={onOpenSettings} className="nav-btn w-full"><Settings size={18}/>{!isFolded && 'Settings'}</button>
         </div>
         
-        <button 
-          onClick={logout} 
-          className={`w-full flex items-center gap-2 p-2 rounded-lg text-red-400 hover:bg-red-900/30 font-semibold transition-colors ${isFolded ? 'justify-center' : ''}`}
-        >
-          <LogOut className="w-4 h-4" />
-          {!isFolded && <span>Logout</span>}
-        </button>
+        <button onClick={logout} className={`w-full flex items-center gap-2 p-2 rounded-lg text-red-400 hover:bg-red-900/30 font-semibold transition-colors ${isFolded ? 'justify-center' : ''}`}><LogOut className="w-4 h-4" />{!isFolded && <span>Logout</span>}</button>
       </div>
     </aside>
   );
