@@ -72,11 +72,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   const fallbackProfile: Profile = {
                     id: currentSession.user.id,
                     email: currentSession.user.email || 'unknown@example.com',
-                    full_name: currentSession.user.user_metadata?.full_name || 
-                               currentSession.user.email?.split('@')[0] || 'User',
+                    full_name: currentSession.user.user_metadata?.full_name || 'User',
                     role: currentSession.user.user_metadata?.role || 'student',
-                    created_at: new Date(),
-                    updated_at: new Date(),
                     teacher_id: currentSession.user.user_metadata?.teacher_id || null
                   };
                   
@@ -111,8 +108,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 email: session.user.email || 'user@example.com',
                 full_name: 'User',
                 role: 'student',
-                created_at: new Date(),
-                updated_at: new Date(),
                 teacher_id: null
               };
               setProfile(basicProfile);
@@ -198,20 +193,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           } catch (profileError: any) {
             console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
             
-            if (isMounted) {
-              // Create fallback instead of failing
+            // Only create a fallback profile if one doesn't already exist.
+            // This prevents a valid profile from being overwritten by a temporary network error.
+            if (isMounted && !profile) {
               const fallbackProfile: Profile = {
                 id: newSession.user.id,
                 email: newSession.user.email || 'unknown@example.com',
                 full_name: newSession.user.user_metadata?.full_name || 'User',
                 role: newSession.user.user_metadata?.role || 'student',
-                created_at: new Date(),
-                updated_at: new Date(),
                 teacher_id: newSession.user.user_metadata?.teacher_id || null
               };
-              
               setProfile(fallbackProfile);
-              console.log('Using fallback profile after auth change');
+              console.log('Using fallback profile as no profile was present.');
+            } else if (isMounted) {
+              console.log('An existing profile is already loaded; not overwriting due to a refresh error.');
             }
           }
         }
