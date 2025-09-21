@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { X, Database, Upload, Trash2, Monitor, Settings, User } from 'lucide-react';
-import { storageUtils } from '../utils/storage';
+import { X, Monitor, Settings, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 interface SettingsModalProps {
@@ -8,19 +7,11 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type TabType = 'account' | 'data' | 'about';
+type TabType = 'account' | 'about';  // <-- Removed 'data'
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('account');
-  
-  const handleClearData = () => {
-    if (window.confirm('Are you sure you want to delete ALL application data from your browser, including conversations and settings? This action cannot be undone.')) {
-      storageUtils.clearAllData();
-      alert('All local data has been cleared. The app will now reload.');
-      window.location.reload();
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -55,12 +46,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         {/* Tabs */}
-        <div className="p-2 grid grid-cols-3 gap-2 border-b border-[var(--color-border)] flex-shrink-0">
+        <div className="p-2 grid grid-cols-2 gap-2 border-b border-[var(--color-border)] flex-shrink-0">  {/* <-- Updated to grid-cols-2 */}
           <TabButton id="account" label="Account" Icon={User} />
-          <TabButton id="data" label="Data" Icon={Database} />
           <TabButton id="about" label="About" Icon={Monitor} />
         </div>
-        
+
         {/* Content */}
         <div className="p-4 sm:p-6 overflow-y-auto min-h-[20rem]">
           {activeTab === 'account' && profile && (
@@ -83,33 +73,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </div>
           )}
 
-          {activeTab === 'data' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div>
-                <h3 className="font-semibold mb-2">Manage Your Data</h3>
-                <label className="flex items-center justify-center gap-2 p-3 border border-[var(--color-border)] rounded-lg hover:bg-[var(--color-card)] transition-colors cursor-pointer">
-                    <Upload className="w-4 h-4"/> Import Data
-                    <input type="file" onChange={() => { alert('This feature is not yet implemented.'); }} accept=".json" className="hidden"/>
-                </label>
-              </div>
-               <div>
-                <h3 className="font-semibold mb-2 text-red-400">Danger Zone</h3>
-                <button onClick={handleClearData} className="w-full flex items-center justify-center gap-2 p-3 border border-red-500/30 bg-red-900/20 text-red-400 rounded-lg hover:bg-red-900/40 hover:text-red-300 transition-colors">
-                  <Trash2 className="w-4 h-4" />
-                  Clear All Local Data
-                </button>
-              </div>
-            </div>
-          )}
-          
           {activeTab === 'about' && (
-             <div className="space-y-6 animate-fadeIn text-center flex flex-col items-center justify-center h-full">
-                <img src="/white-logo.png" alt="AI Tutor Logo" className="w-16 h-16 mx-auto" />
-                <h4 className="text-lg font-bold text-[var(--color-text-primary)]">AI Tutor</h4>
-                <p className="text-sm text-[var(--color-text-secondary)] max-w-xs">Intelligent learning companion designed to help students understand complex topics through AI-powered conversations.</p>
-                <div className="text-xs text-[var(--color-text-secondary)] bg-[var(--color-card)] rounded-lg p-3 font-mono">
-                    Version: 1.2.0
-                </div>
+            <div className="space-y-6 animate-fadeIn text-center flex flex-col items-center justify-center h-full">
+              <img src="/white-logo.png" alt="AI Tutor Logo" className="w-16 h-16 mx-auto" />
+              <h4 className="text-lg font-bold text-[var(--color-text-primary)]">AI Tutor</h4>
+              <p className="text-sm text-[var(--color-text-secondary)] max-w-xs">
+                Intelligent learning companion designed to help students understand complex topics through AI-powered conversations.
+              </p>
+              <div className="text-xs text-[var(--color-text-secondary)] bg-[var(--color-card)] rounded-lg p-3 font-mono">
+                Version: 1.2.0
+              </div>
             </div>
           )}
         </div>
