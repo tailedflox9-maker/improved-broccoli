@@ -57,7 +57,13 @@ export interface StudySession {
   totalQuestions: number;
   isCompleted: boolean;
   createdAt: Date;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
   assignmentId?: string; // To link session to a specific assignment
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export interface QuizQuestion {
@@ -76,7 +82,13 @@ export interface GeneratedQuiz {
   topic: string;
   questions: QuizQuestion[];
   created_at: Date;
+  // =================================================================
+  // == START OF CHANGES
+  // =================================================================
   teacher_id: string;
+  // =================================================================
+  // == END OF CHANGES
+  // =================================================================
 }
 
 export interface FlaggedMessage {
@@ -86,6 +98,9 @@ export interface FlaggedMessage {
     student_name: string; // From joined profile
     created_at: string;
 }
+// =================================================================
+// == START OF CHANGES
+// =================================================================
 export interface QuizAssignment {
   id: string;
   quiz_id: string;
@@ -105,48 +120,6 @@ export interface QuizAssignmentWithDetails extends QuizAssignment {
   };
   profiles: {
     full_name: string | null; // Teacher's name
-  };
-}
-
-// =================================================================
-// == START OF CHANGES
-// =================================================================
-export type AssignmentType = 'quiz' | 'essay';
-
-// For teachers creating an assignment
-export interface Assignment {
-  id: string;
-  teacher_id: string;
-  title: string;
-  description: string;
-  created_at: string;
-  due_at: string | null;
-  type: AssignmentType;
-  quiz_id: string | null; // Link to a generated quiz
-}
-
-// For students receiving and submitting assignments
-export interface StudentAssignment {
-  id: string;
-  assignment_id: string;
-  student_id: string;
-  status: 'pending' | 'submitted' | 'graded';
-  submitted_at: string | null;
-  submission_content: string | null;
-  feedback: string | null;
-  grade: number | null; // Could be a score or percentage
-}
-
-// A more detailed view for teachers/students
-export interface StudentAssignmentDetails extends StudentAssignment {
-  assignments: {
-    title: string;
-    description: string;
-    due_at: string | null;
-  };
-  profiles?: { // Student profile
-    full_name: string | null;
-    email: string;
   };
 }
 // =================================================================
@@ -205,25 +178,15 @@ export interface Database {
           Insert: any;
           Update: any;
       }
+      // =================================================================
+      // == START OF CHANGES
+      // =================================================================
       generated_quizzes: {
         Row: any;
         Insert: any;
         Update: any;
       }
       quiz_assignments: {
-        Row: any;
-        Insert: any;
-        Update: any;
-      }
-      // =================================================================
-      // == START OF CHANGES
-      // =================================================================
-      assignments: {
-        Row: any;
-        Insert: any;
-        Update: any;
-      }
-      student_assignments: {
         Row: any;
         Insert: any;
         Update: any;
