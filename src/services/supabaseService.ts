@@ -1,17 +1,72 @@
 import { supabase, getAdminClient } from '../supabase';
 import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
 
-// --- PROFILE & USER MGMT ---
+// --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
-  const { data, error } = await supabase.rpc('get_my_profile');
-  if (error) {
-    console.error("Error calling get_my_profile RPC:", error);
-    throw new Error("Could not fetch user profile from the database.");
+  console.log('Getting user profile...');
+  
+  try {
+    // Get current authenticated user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      console.error('Authentication error:', userError);
+      throw new Error('User not authenticated');
+    }
+    
+    console.log('Authenticated user found:', user.email);
+    
+    // Get profile directly from profiles table
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    
+    if (profileError) {
+      console.error('Profile query error:', profileError);
+      
+      // If profile doesn't exist, create it
+      if (profileError.code === 'PGRST116') {
+        console.log('Profile not found, creating new profile...');
+        
+        const newProfile = {
+          id: user.id,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'User',
+          role: user.user_metadata?.role || 'student',
+          teacher_id: user.user_metadata?.teacher_id || null
+        };
+        
+        const { data: createdProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert(newProfile)
+          .select()
+          .single();
+          
+        if (createError) {
+          console.error('Failed to create profile:', createError);
+          throw new Error(`Failed to create profile: ${createError.message}`);
+        }
+        
+        console.log('Profile created successfully:', createdProfile);
+        return createdProfile as Profile;
+      }
+      
+      throw new Error(`Profile error: ${profileError.message}`);
+    }
+    
+    if (!profile) {
+      throw new Error('Profile data is null');
+    }
+    
+    console.log('Profile loaded successfully:', profile.email, profile.role);
+    return profile as Profile;
+    
+  } catch (error: any) {
+    console.error('getProfile failed:', error.message);
+    throw new Error(`Could not load user profile: ${error.message}`);
   }
-  if (!data || data.length === 0) {
-    throw new Error("User profile not found in the database.");
-  }
-  return data[0] as Profile;
 };
 
 // --- CONVERSATIONS & MESSAGES (DATABASE-DRIVEN) ---
@@ -31,7 +86,7 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
 };
 
 export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
-    console.log('Fetching messages for conversation ID:', conversationId); // Debug log
+    console.log('Fetching messages for conversation ID:', conversationId);
 
     if (!conversationId || conversationId.trim() === '') {
         console.error('Invalid conversation ID provided:', conversationId);
@@ -50,7 +105,7 @@ export const getConversationMessages = async (conversationId: string): Promise<M
             throw error;
         }
 
-        console.log('Raw message data from database:', data); // Debug log
+        console.log('Raw message data from database:', data);
 
         if (!data) {
             console.log('No data returned from query');
@@ -62,7 +117,7 @@ export const getConversationMessages = async (conversationId: string): Promise<M
             created_at: new Date(msg.created_at)
         })) as Message[];
 
-        console.log('Processed messages:', messages); // Debug log
+        console.log('Processed messages:', messages);
 
         return messages;
     } catch (error) {
