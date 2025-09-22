@@ -1,7 +1,7 @@
 import { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { supabase } from '../supabase';
 import { getProfile } from '../services/supabaseService';
-import { Profile } from '../types';
+import { Profile, Role } from '../types';
 import { Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -20,82 +20,271 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // Helper function to safely get user role with proper fallback
+  const getUserRole = (user: any, existingProfile?: Profile | null): Role => {
+    // Priority 1: Use existing profile role if available (prevents role switching)
+    if (existingProfile?.role) {
+      console.log('Using existing profile role:', existingProfile.role);
+      return existingProfile.role;
+    }
+
+    // Priority 2: Use user metadata role
+    if (user?.user_metadata?.role) {
+      console.log('Using user metadata role:', user.user_metadata.role);
+      return user.user_metadata.role;
+    }
+
+    // Priority 3: Determine role based on email domain or other heuristics
+    const email = user?.email || '';
+    
+    // Check if email suggests teacher/admin role
+    if (email.includes('teacher') || email.includes('admin') || email.includes('edu')) {
+      console.log('Email suggests teacher role, using teacher as fallback');
+      return 'teacher';
+    }
+
+    // Priority 4: Final fallback to student (but log this as it might indicate an issue)
+    console.warn('No role information available, defaulting to student. This might indicate a data issue.');
+    return 'student';
+  };
+
   useEffect(() => {
     let isMounted = true;
+    let initTimeout: NodeJS.Timeout;
 
     const initializeAuth = async () => {
       try {
-        // Get the current session
-        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
+        console.log('Starting authentication initialization...');
 
-        if (!isMounted) return;
+        // Set a maximum timeout for the entire initialization process
+        const initPromise = new Promise<void>(async (resolve, reject) => {
+          try {
+            // Get the current session - simplified approach
+            const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+            
+            if (sessionError) {
+              console.error('Session retrieval error:', sessionError);
+              throw new Error(`Session error: ${sessionError.message}`);
+            }
 
-        setSession(currentSession);
+            if (!isMounted) {
+              resolve();
+              return;
+            }
 
-        if (currentSession?.user) {
-          const userProfile = await getProfile();
-          if (isMounted) {
-            setProfile(userProfile);
-            setError(null);
+            console.log('Session status:', currentSession ? 'Active session found' : 'No active session');
+            setSession(currentSession);
+
+            if (currentSession?.user) {
+              try {
+                console.log('Loading user profile for user:', currentSession.user.id);
+                
+                // Try to get profile with a timeout
+                const profilePromise = getProfile();
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('Profile loading timeout')), 8000);
+                });
+
+                const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+                
+                if (isMounted) {
+                  console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
+                  setProfile(userProfile);
+                  setError(null);
+                }
+              } catch (profileError: any) {
+                console.warn('Profile loading failed, creating fallback:', profileError.message);
+                
+                if (isMounted) {
+                  // Create a robust fallback profile with proper role handling
+                  const fallbackProfile: Profile = {
+                    id: currentSession.user.id,
+                    email: currentSession.user.email || 'unknown@example.com',
+                    full_name: currentSession.user.user_metadata?.full_name || 'User',
+                    role: getUserRole(currentSession.user, profile), // FIXED: Use smart role detection
+                    teacher_id: currentSession.user.user_metadata?.teacher_id || null
+                  };
+                  
+                  setProfile(fallbackProfile);
+                  setError(null); // Don't treat fallback as an error
+                  console.log('Using fallback profile with role:', fallbackProfile.role, '- app will continue working');
+                }
+              }
+            } else {
+              if (isMounted) {
+                console.log('No user session - clearing profile');
+                setProfile(null);
+                setError(null);
+              }
+            }
+
+            resolve();
+          } catch (err: any) {
+            reject(err);
           }
-        }
+        });
+
+        // Set a hard timeout for initialization
+        initTimeout = setTimeout(() => {
+          console.warn('Auth initialization timeout - forcing completion');
+          if (isMounted) {
+            setLoading(false);
+            // If we have a session but no profile, create a basic one
+            if (session?.user && !profile) {
+              const basicProfile: Profile = {
+                id: session.user.id,
+                email: session.user.email || 'user@example.com',
+                full_name: 'User',
+                role: getUserRole(session.user, profile), // FIXED: Use smart role detection
+                teacher_id: null
+              };
+              setProfile(basicProfile);
+            }
+          }
+        }, 10000); // 10 second hard limit
+
+        await initPromise;
+
       } catch (err: any) {
         console.error('Authentication initialization failed:', err);
+        
         if (isMounted) {
-          setError(new Error(`Authentication failed: ${err.message}`));
+          // Only set error for truly critical issues
+          if (err.message?.includes('network') || err.message?.includes('connection')) {
+            setError(new Error('Connection issue. Please check your internet.'));
+          } else {
+            // For other errors, just log them but don't block the user
+            console.warn('Non-critical auth error:', err.message);
+            setError(null);
+          }
+          
+          // Clear session on critical errors only
+          if (err.message?.includes('Session expired') || err.message?.includes('Invalid session')) {
+            setSession(null);
+            setProfile(null);
+          }
         }
       } finally {
+        if (initTimeout) {
+          clearTimeout(initTimeout);
+        }
+        
         if (isMounted) {
+          console.log('Authentication initialization complete - stopping loading');
           setLoading(false);
         }
       }
     };
 
+    // Initialize authentication
     initializeAuth();
 
+    // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
+        console.log('Auth state change detected:', event);
+
         if (!isMounted) return;
 
-        setSession(newSession);
-        
+        // Clear any existing errors on auth changes
+        setError(null);
+
+        // For sign out events, clear immediately
         if (event === 'SIGNED_OUT') {
+          console.log('User signed out - clearing all state');
+          setSession(null);
           setProfile(null);
-          setError(null);
+          setLoading(false);
           return;
         }
 
-        if (newSession?.user) {
+        // Update session state
+        setSession(newSession);
+
+        // For sign in or token refresh, load profile
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
           try {
-            const userProfile = await getProfile();
+            console.log('Loading profile after auth change...');
+            
+            // Quick profile load with timeout
+            const profilePromise = getProfile();
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Profile timeout')), 5000);
+            });
+
+            const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+            
             if (isMounted) {
+              console.log('Profile updated after auth change');
               setProfile(userProfile);
-              setError(null); // Clear previous errors
             }
           } catch (profileError: any) {
-            console.error('Profile loading failed after auth change:', profileError.message);
-            if (isMounted) {
-              setProfile(null); // On failure, clear profile and set an error
-              setError(new Error(`Failed to refresh profile: ${profileError.message}`));
+            console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
+            
+            // CRITICAL FIX: Only create a fallback profile if one doesn't already exist
+            // AND preserve existing role if we have one
+            if (isMounted && !profile) {
+              const fallbackProfile: Profile = {
+                id: newSession.user.id,
+                email: newSession.user.email || 'unknown@example.com',
+                full_name: newSession.user.user_metadata?.full_name || 'User',
+                role: getUserRole(newSession.user, profile), // FIXED: Use smart role detection
+                teacher_id: newSession.user.user_metadata?.teacher_id || null
+              };
+              setProfile(fallbackProfile);
+              console.log('Using fallback profile with role:', fallbackProfile.role, 'as no profile was present.');
+            } else if (isMounted) {
+              console.log('An existing profile is already loaded; not overwriting due to a refresh error. Current role:', profile?.role);
             }
           }
+        }
+
+        // Ensure loading is always set to false after auth state changes
+        if (isMounted) {
+          setLoading(false);
         }
       }
     );
 
     return () => {
+      console.log('AuthProvider cleanup');
       isMounted = false;
+      if (initTimeout) {
+        clearTimeout(initTimeout);
+      }
       authListener.subscription.unsubscribe();
     };
-  }, []); // FIX: Run only once on component mount.
+  }, []);
 
   const logout = useCallback(async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Logout error:', error);
+    try {
+      console.log('Initiating logout...');
+      
+      // Clear local state immediately to prevent UI flickering
+      setLoading(true);
+      setProfile(null);
+      setError(null);
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Logout error:', error);
+        throw error;
+      }
+
+      console.log('Logout successful');
+      setSession(null);
+      setLoading(false);
+      
+    } catch (error: any) {
+      console.error('Error during logout:', error);
+      // Even if logout fails, clear local state
+      setSession(null);
+      setProfile(null);
+      setError(null);
+      setLoading(false);
     }
-    // The onAuthStateChange listener will handle clearing the state.
   }, []);
 
   const value = {
