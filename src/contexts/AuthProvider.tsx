@@ -20,34 +20,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Helper function to safely get user role with proper fallback
-  const getUserRole = (user: any, existingProfile?: Profile | null): Role => {
-    // Priority 1: Use existing profile role if available (prevents role switching)
-    if (existingProfile?.role) {
-      console.log('Using existing profile role:', existingProfile.role);
-      return existingProfile.role;
-    }
-
-    // Priority 2: Use user metadata role
-    if (user?.user_metadata?.role) {
-      console.log('Using user metadata role:', user.user_metadata.role);
-      return user.user_metadata.role;
-    }
-
-    // Priority 3: Determine role based on email domain or other heuristics
-    const email = user?.email || '';
-    
-    // Check if email suggests teacher/admin role
-    if (email.includes('teacher') || email.includes('admin') || email.includes('edu')) {
-      console.log('Email suggests teacher role, using teacher as fallback');
-      return 'teacher';
-    }
-
-    // Priority 4: Final fallback to student (but log this as it might indicate an issue)
-    console.warn('No role information available, defaulting to student. This might indicate a data issue.');
-    return 'student';
-  };
-
   useEffect(() => {
     let isMounted = true;
     let initTimeout: NodeJS.Timeout;
@@ -56,10 +28,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         console.log('Starting authentication initialization...');
 
-        // Set a maximum timeout for the entire initialization process
         const initPromise = new Promise<void>(async (resolve, reject) => {
           try {
-            // Get the current session - simplified approach
+            // Get the current session
             const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
             
             if (sessionError) {
@@ -79,13 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               try {
                 console.log('Loading user profile for user:', currentSession.user.id);
                 
-                // Try to get profile with a timeout
-                const profilePromise = getProfile();
-                const timeoutPromise = new Promise((_, reject) => {
-                  setTimeout(() => reject(new Error('Profile loading timeout')), 8000);
-                });
-
-                const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+                const userProfile = await getProfile();
                 
                 if (isMounted) {
                   console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
@@ -93,21 +58,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   setError(null);
                 }
               } catch (profileError: any) {
-                console.warn('Profile loading failed, creating fallback:', profileError.message);
+                console.error('Profile loading failed:', profileError.message);
                 
                 if (isMounted) {
-                  // Create a robust fallback profile with proper role handling
-                  const fallbackProfile: Profile = {
-                    id: currentSession.user.id,
-                    email: currentSession.user.email || 'unknown@example.com',
-                    full_name: currentSession.user.user_metadata?.full_name || 'User',
-                    role: getUserRole(currentSession.user, profile), // FIXED: Use smart role detection
-                    teacher_id: currentSession.user.user_metadata?.teacher_id || null
-                  };
-                  
-                  setProfile(fallbackProfile);
-                  setError(null); // Don't treat fallback as an error
-                  console.log('Using fallback profile with role:', fallbackProfile.role, '- app will continue working');
+                  // DON'T create fallback - let the app handle no profile gracefully
+                  setProfile(null);
+                  setError(new Error(`Profile loading failed: ${profileError.message}`));
                 }
               }
             } else {
@@ -124,24 +80,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         });
 
-        // Set a hard timeout for initialization
+        // Set a timeout for initialization
         initTimeout = setTimeout(() => {
           console.warn('Auth initialization timeout - forcing completion');
           if (isMounted) {
             setLoading(false);
-            // If we have a session but no profile, create a basic one
-            if (session?.user && !profile) {
-              const basicProfile: Profile = {
-                id: session.user.id,
-                email: session.user.email || 'user@example.com',
-                full_name: 'User',
-                role: getUserRole(session.user, profile), // FIXED: Use smart role detection
-                teacher_id: null
-              };
-              setProfile(basicProfile);
-            }
           }
-        }, 10000); // 10 second hard limit
+        }, 10000);
 
         await initPromise;
 
@@ -149,16 +94,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.error('Authentication initialization failed:', err);
         
         if (isMounted) {
-          // Only set error for truly critical issues
           if (err.message?.includes('network') || err.message?.includes('connection')) {
             setError(new Error('Connection issue. Please check your internet.'));
           } else {
-            // For other errors, just log them but don't block the user
             console.warn('Non-critical auth error:', err.message);
             setError(null);
           }
           
-          // Clear session on critical errors only
           if (err.message?.includes('Session expired') || err.message?.includes('Invalid session')) {
             setSession(null);
             setProfile(null);
@@ -186,10 +128,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (!isMounted) return;
 
-        // Clear any existing errors on auth changes
         setError(null);
 
-        // For sign out events, clear immediately
         if (event === 'SIGNED_OUT') {
           console.log('User signed out - clearing all state');
           setSession(null);
@@ -198,48 +138,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        // Update session state
         setSession(newSession);
 
-        // For sign in or token refresh, load profile
         if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
           try {
             console.log('Loading profile after auth change...');
             
-            // Quick profile load with timeout
-            const profilePromise = getProfile();
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Profile timeout')), 5000);
-            });
-
-            const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+            const userProfile = await getProfile();
             
             if (isMounted) {
-              console.log('Profile updated after auth change');
+              console.log('Profile updated after auth change:', userProfile.role);
               setProfile(userProfile);
             }
           } catch (profileError: any) {
-            console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
+            console.error('Profile loading failed after auth change:', profileError.message);
             
-            // CRITICAL FIX: Only create a fallback profile if one doesn't already exist
-            // AND preserve existing role if we have one
+            // CRITICAL: Don't create fallbacks on auth state changes
+            // This preserves existing profile and prevents role switching
             if (isMounted && !profile) {
-              const fallbackProfile: Profile = {
-                id: newSession.user.id,
-                email: newSession.user.email || 'unknown@example.com',
-                full_name: newSession.user.user_metadata?.full_name || 'User',
-                role: getUserRole(newSession.user, profile), // FIXED: Use smart role detection
-                teacher_id: newSession.user.user_metadata?.teacher_id || null
-              };
-              setProfile(fallbackProfile);
-              console.log('Using fallback profile with role:', fallbackProfile.role, 'as no profile was present.');
+              console.log('No existing profile to preserve, setting to null');
+              setProfile(null);
+              setError(new Error('Profile loading failed'));
             } else if (isMounted) {
-              console.log('An existing profile is already loaded; not overwriting due to a refresh error. Current role:', profile?.role);
+              console.log('Preserving existing profile to prevent role switching. Current role:', profile?.role);
+              // Keep existing profile - don't overwrite with fallback
             }
           }
         }
 
-        // Ensure loading is always set to false after auth state changes
         if (isMounted) {
           setLoading(false);
         }
@@ -254,18 +180,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [profile?.role]); // Add dependency to prevent unnecessary re-renders
 
   const logout = useCallback(async () => {
     try {
       console.log('Initiating logout...');
       
-      // Clear local state immediately to prevent UI flickering
       setLoading(true);
       setProfile(null);
       setError(null);
       
-      // Sign out from Supabase
       const { error } = await supabase.auth.signOut();
       
       if (error) {
@@ -279,7 +203,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
     } catch (error: any) {
       console.error('Error during logout:', error);
-      // Even if logout fails, clear local state
       setSession(null);
       setProfile(null);
       setError(null);
