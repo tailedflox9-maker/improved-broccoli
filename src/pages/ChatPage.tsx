@@ -565,3 +565,65 @@ export default function ChatPage() {
     </div>
   );
 }
+
+
+// Add this component temporarily to your ChatPage.tsx to debug the issue
+
+import { useAuth } from '../hooks/useAuth';
+import { useEffect, useRef } from 'react';
+
+export const RoleDebugger = () => {
+  const { profile, session } = useAuth();
+  const roleHistoryRef = useRef<Array<{timestamp: string, role: string, source: string}>>([]);
+
+  useEffect(() => {
+    if (profile?.role) {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        role: profile.role,
+        source: 'profile_change'
+      };
+      
+      // Only log if role actually changed
+      const lastEntry = roleHistoryRef.current[roleHistoryRef.current.length - 1];
+      if (!lastEntry || lastEntry.role !== profile.role) {
+        roleHistoryRef.current.push(entry);
+        console.log('🔍 ROLE CHANGE DETECTED:', entry);
+        console.log('📊 Role History:', roleHistoryRef.current);
+        
+        // Check session metadata too
+        console.log('👤 Session User Metadata:', session?.user?.user_metadata);
+        console.log('📧 User Email:', session?.user?.email);
+      }
+    }
+  }, [profile?.role, session]);
+
+  // Only show in development
+  if (process.env.NODE_ENV !== 'development') return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '10px',
+      right: '10px',
+      background: 'rgba(0,0,0,0.8)',
+      color: 'white',
+      padding: '10px',
+      borderRadius: '5px',
+      fontSize: '12px',
+      zIndex: 9999,
+      maxWidth: '300px'
+    }}>
+      <div><strong>Current Role:</strong> {profile?.role || 'None'}</div>
+      <div><strong>User ID:</strong> {profile?.id?.slice(0, 8)}...</div>
+      <div><strong>Email:</strong> {profile?.email}</div>
+      <div><strong>Metadata Role:</strong> {session?.user?.user_metadata?.role || 'None'}</div>
+      <div><strong>Changes:</strong> {roleHistoryRef.current.length}</div>
+      {roleHistoryRef.current.length > 1 && (
+        <div style={{marginTop: '5px', fontSize: '10px'}}>
+          <strong>Last change:</strong> {roleHistoryRef.current[roleHistoryRef.current.length - 1]?.timestamp}
+        </div>
+      )}
+    </div>
+  );
+};
