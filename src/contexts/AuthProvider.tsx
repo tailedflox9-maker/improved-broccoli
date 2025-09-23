@@ -20,12 +20,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // FIXED: Keep track of the established role to prevent switching
+  const [establishedRole, setEstablishedRole] = useState<Role | null>(null);
+
   // Helper function to safely get user role with proper fallback
-  const getUserRole = (user: any, existingProfile?: Profile | null): Role => {
+  const getUserRole = (user: any, currentProfile?: Profile | null): Role => {
+    // CRITICAL FIX: Use establishedRole first to prevent role switching
+    if (establishedRole) {
+      console.log('Using established role to prevent switching:', establishedRole);
+      return establishedRole;
+    }
+
     // Priority 1: Use existing profile role if available (prevents role switching)
-    if (existingProfile?.role) {
-      console.log('Using existing profile role:', existingProfile.role);
-      return existingProfile.role;
+    if (currentProfile?.role) {
+      console.log('Using existing profile role:', currentProfile.role);
+      return currentProfile.role;
     }
 
     // Priority 2: Use user metadata role
@@ -90,6 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 if (isMounted) {
                   console.log('User profile loaded successfully:', userProfile.email, userProfile.role);
                   setProfile(userProfile);
+                  setEstablishedRole(userProfile.role); // FIXED: Set established role
                   setError(null);
                 }
               } catch (profileError: any) {
@@ -97,15 +107,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 
                 if (isMounted) {
                   // Create a robust fallback profile with proper role handling
+                  const fallbackRole = getUserRole(currentSession.user, profile);
                   const fallbackProfile: Profile = {
                     id: currentSession.user.id,
                     email: currentSession.user.email || 'unknown@example.com',
                     full_name: currentSession.user.user_metadata?.full_name || 'User',
-                    role: getUserRole(currentSession.user, profile), // FIXED: Use smart role detection
+                    role: fallbackRole,
                     teacher_id: currentSession.user.user_metadata?.teacher_id || null
                   };
                   
                   setProfile(fallbackProfile);
+                  setEstablishedRole(fallbackRole); // FIXED: Set established role
                   setError(null); // Don't treat fallback as an error
                   console.log('Using fallback profile with role:', fallbackProfile.role, '- app will continue working');
                 }
@@ -114,6 +126,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               if (isMounted) {
                 console.log('No user session - clearing profile');
                 setProfile(null);
+                setEstablishedRole(null); // FIXED: Clear established role
                 setError(null);
               }
             }
@@ -131,14 +144,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setLoading(false);
             // If we have a session but no profile, create a basic one
             if (session?.user && !profile) {
+              const basicRole = getUserRole(session.user, profile);
               const basicProfile: Profile = {
                 id: session.user.id,
                 email: session.user.email || 'user@example.com',
                 full_name: 'User',
-                role: getUserRole(session.user, profile), // FIXED: Use smart role detection
+                role: basicRole,
                 teacher_id: null
               };
               setProfile(basicProfile);
+              setEstablishedRole(basicRole); // FIXED: Set established role
             }
           }
         }, 10000); // 10 second hard limit
@@ -162,6 +177,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (err.message?.includes('Session expired') || err.message?.includes('Invalid session')) {
             setSession(null);
             setProfile(null);
+            setEstablishedRole(null); // FIXED: Clear established role
           }
         }
       } finally {
@@ -194,6 +210,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           console.log('User signed out - clearing all state');
           setSession(null);
           setProfile(null);
+          setEstablishedRole(null); // FIXED: Clear established role on signout
           setLoading(false);
           return;
         }
@@ -201,41 +218,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Update session state
         setSession(newSession);
 
-        // For sign in or token refresh, load profile
-        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
-          try {
-            console.log('Loading profile after auth change...');
-            
-            // Quick profile load with timeout
-            const profilePromise = getProfile();
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Profile timeout')), 5000);
-            });
+        // CRITICAL FIX: For token refresh events, DON'T reload profile if we already have one
+        // This prevents the admin->student role switching bug
+        if (event === 'TOKEN_REFRESHED' && profile && establishedRole) {
+          console.log('Token refreshed - keeping existing profile and role:', establishedRole);
+          setLoading(false);
+          return;
+        }
 
-            const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
-            
-            if (isMounted) {
-              console.log('Profile updated after auth change');
-              setProfile(userProfile);
+        // For sign in or initial load, load profile
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && newSession?.user) {
+          // FIXED: Only load profile if we don't already have one with an established role
+          if (!profile || !establishedRole) {
+            try {
+              console.log('Loading profile after auth change...');
+              
+              // Quick profile load with timeout
+              const profilePromise = getProfile();
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Profile timeout')), 5000);
+              });
+
+              const userProfile = await Promise.race([profilePromise, timeoutPromise]) as Profile;
+              
+              if (isMounted) {
+                console.log('Profile updated after auth change');
+                setProfile(userProfile);
+                setEstablishedRole(userProfile.role); // FIXED: Set established role
+              }
+            } catch (profileError: any) {
+              console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
+              
+              // FIXED: Only create a fallback profile if one doesn't already exist
+              if (isMounted && !profile) {
+                const fallbackRole = getUserRole(newSession.user, profile);
+                const fallbackProfile: Profile = {
+                  id: newSession.user.id,
+                  email: newSession.user.email || 'unknown@example.com',
+                  full_name: newSession.user.user_metadata?.full_name || 'User',
+                  role: fallbackRole,
+                  teacher_id: newSession.user.user_metadata?.teacher_id || null
+                };
+                setProfile(fallbackProfile);
+                setEstablishedRole(fallbackRole); // FIXED: Set established role
+                console.log('Using fallback profile with role:', fallbackProfile.role, 'as no profile was present.');
+              } else if (isMounted) {
+                console.log('An existing profile is already loaded; not overwriting due to a refresh error. Current role:', profile?.role);
+              }
             }
-          } catch (profileError: any) {
-            console.warn('Profile loading failed after auth change, using fallback:', profileError.message);
-            
-            // CRITICAL FIX: Only create a fallback profile if one doesn't already exist
-            // AND preserve existing role if we have one
-            if (isMounted && !profile) {
-              const fallbackProfile: Profile = {
-                id: newSession.user.id,
-                email: newSession.user.email || 'unknown@example.com',
-                full_name: newSession.user.user_metadata?.full_name || 'User',
-                role: getUserRole(newSession.user, profile), // FIXED: Use smart role detection
-                teacher_id: newSession.user.user_metadata?.teacher_id || null
-              };
-              setProfile(fallbackProfile);
-              console.log('Using fallback profile with role:', fallbackProfile.role, 'as no profile was present.');
-            } else if (isMounted) {
-              console.log('An existing profile is already loaded; not overwriting due to a refresh error. Current role:', profile?.role);
-            }
+          } else {
+            console.log('Profile already exists with established role:', establishedRole, '- skipping profile reload to prevent role switching');
           }
         }
 
@@ -254,7 +286,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, []); // FIXED: Remove profile and establishedRole from dependencies to prevent infinite loops
 
   const logout = useCallback(async () => {
     try {
@@ -263,6 +295,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Clear local state immediately to prevent UI flickering
       setLoading(true);
       setProfile(null);
+      setEstablishedRole(null); // FIXED: Clear established role
       setError(null);
       
       // Sign out from Supabase
@@ -282,6 +315,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Even if logout fails, clear local state
       setSession(null);
       setProfile(null);
+      setEstablishedRole(null); // FIXED: Clear established role
       setError(null);
       setLoading(false);
     }
