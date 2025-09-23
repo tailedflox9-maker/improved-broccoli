@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails } from '../types';
 
 // --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
@@ -558,3 +558,199 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
+
+// =================================================================
+// == START OF NEW FEATURE: STUDENT PROFILES
+// =================================================================
+
+// --- STUDENT PROFILE MANAGEMENT ---
+
+export const getStudentProfilesForTeacher = async (teacherId: string): Promise<StudentProfileWithDetails[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select(`
+        *,
+        profiles!student_profiles_student_id_fkey(
+          full_name,
+          email
+        )
+      `)
+      .eq('teacher_id', teacherId)
+      .eq('is_active', true)
+      .order('student_name', { ascending: true });
+
+    if (error) throw error;
+    return data as StudentProfileWithDetails[];
+  } catch (error: any) {
+    console.error('Error fetching student profiles:', error);
+    throw error;
+  }
+};
+
+export const getAllStudentProfiles = async (): Promise<StudentProfileWithDetails[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select(`
+        *,
+        profiles!student_profiles_student_id_fkey(
+          full_name,
+          email
+        )
+      `)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data as StudentProfileWithDetails[];
+  } catch (error: any) {
+    console.error('Error fetching all student profiles:', error);
+    throw error;
+  }
+};
+
+export const getStudentProfile = async (studentId: string, teacherId: string): Promise<StudentProfile | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select('*')
+      .eq('student_id', studentId)
+      .eq('teacher_id', teacherId)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null; // No profile found
+      }
+      throw error;
+    }
+    
+    return data as StudentProfile;
+  } catch (error: any) {
+    console.error('Error fetching student profile:', error);
+    throw error;
+  }
+};
+
+export const createStudentProfile = async (profileData: Omit<StudentProfile, 'id' | 'created_at' | 'updated_at'>): Promise<StudentProfile> => {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .insert(profileData)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as StudentProfile;
+  } catch (error: any) {
+    console.error('Error creating student profile:', error);
+    throw error;
+  }
+};
+
+export const updateStudentProfile = async (
+  profileId: string, 
+  updates: Partial<Omit<StudentProfile, 'id' | 'student_id' | 'teacher_id' | 'created_at'>>
+): Promise<StudentProfile> => {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .update(updates)
+      .eq('id', profileId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as StudentProfile;
+  } catch (error: any) {
+    console.error('Error updating student profile:', error);
+    throw error;
+  }
+};
+
+export const deleteStudentProfile = async (profileId: string): Promise<void> => {
+  try {
+    // Soft delete by setting is_active to false
+    const { error } = await supabase
+      .from('student_profiles')
+      .update({ is_active: false })
+      .eq('id', profileId);
+
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error deleting student profile:', error);
+    throw error;
+  }
+};
+
+// Function to get the active student profile for a student when chatting
+export const getActiveStudentProfileForChat = async (studentId: string): Promise<StudentProfile | null> => {
+  try {
+    // Get the student's assigned teacher
+    const { data: studentData, error: studentError } = await supabase
+      .from('profiles')
+      .select('teacher_id')
+      .eq('id', studentId)
+      .single();
+
+    if (studentError || !studentData?.teacher_id) {
+      return null; // No assigned teacher
+    }
+
+    // Get the student profile created by their assigned teacher
+    return await getStudentProfile(studentId, studentData.teacher_id);
+  } catch (error: any) {
+    console.error('Error fetching active student profile:', error);
+    return null;
+  }
+};
+
+// Function to generate personalized system prompt with student context
+export const generatePersonalizedPrompt = (studentProfile: StudentProfile, basePrompt: string): string => {
+  let personalizedPrompt = basePrompt;
+  
+  const studentContext = [];
+  
+  // Add student basic info
+  studentContext.push(`The student you're tutoring is ${studentProfile.student_name}`);
+  
+  if (studentProfile.age) {
+    studentContext.push(`who is ${studentProfile.age} years old`);
+  }
+  
+  if (studentProfile.grade_level) {
+    studentContext.push(`and is in ${studentProfile.grade_level}`);
+  }
+  
+  // Add learning characteristics
+  if (studentProfile.learning_strengths) {
+    studentContext.push(`\n\nLEARNING STRENGTHS: ${studentProfile.learning_strengths}`);
+  }
+  
+  if (studentProfile.learning_challenges) {
+    studentContext.push(`\n\nLEARNING CHALLENGES: ${studentProfile.learning_challenges}. Please be especially patient and provide additional support in these areas.`);
+  }
+  
+  if (studentProfile.learning_style) {
+    studentContext.push(`\n\nLEARNING STYLE: ${studentProfile.learning_style}. Adapt your teaching approach to match this style.`);
+  }
+  
+  if (studentProfile.interests) {
+    studentContext.push(`\n\nSTUDENT INTERESTS: ${studentProfile.interests}. Try to connect lessons to these interests when possible.`);
+  }
+  
+  if (studentProfile.custom_context) {
+    studentContext.push(`\n\nADDITIONAL CONTEXT: ${studentProfile.custom_context}`);
+  }
+  
+  if (studentContext.length > 0) {
+    personalizedPrompt += `\n\n--- STUDENT PROFILE ---\n${studentContext.join(' ')}\n\nAdjust your teaching style, examples, and explanations to work best for this specific student. Be encouraging and build on their strengths while providing extra support for their challenges.`;
+  }
+  
+  return personalizedPrompt;
+};
+// =================================================================
+// == END OF NEW FEATURE
+// =================================================================
