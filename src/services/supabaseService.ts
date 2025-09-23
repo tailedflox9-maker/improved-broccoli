@@ -1,5 +1,30 @@
-import { supabase, getAdminClient } from '../supabase';
+import { supabase } from '../supabase';
 import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails } from '../types';
+
+// Helper function to call admin operations via Edge Function
+const callAdminFunction = async (action: string, data?: any) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-operations`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action, ...data })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || 'Admin operation failed');
+  }
+
+  return response.json();
+};
 
 // --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
@@ -122,63 +147,6 @@ export const getConversationMessages = async (conversationId: string): Promise<M
         return messages;
     } catch (error) {
         console.error('Error in getConversationMessages:', error);
-        throw error;
-    }
-};
-
-// Admin-specific message fetching function
-export const getConversationMessages_Admin = async (conversationId: string): Promise<Message[]> => {
-    console.log('Admin: Fetching messages for conversation ID:', conversationId);
-
-    if (!conversationId || conversationId.trim() === '') {
-        console.error('Invalid conversation ID provided:', conversationId);
-        throw new Error('Conversation ID is required');
-    }
-
-    try {
-        // Try with admin client first
-        const adminClient = getAdminClient();
-        const { data: adminData, error: adminError } = await adminClient
-            .from('messages')
-            .select('*')
-            .eq('conversation_id', conversationId)
-            .order('created_at', { ascending: true });
-
-        if (!adminError && adminData) {
-            console.log('Admin client successful, found messages:', adminData.length);
-            return adminData.map(msg => ({
-                ...msg,
-                created_at: new Date(msg.created_at)
-            })) as Message[];
-        }
-
-        console.log('Admin client failed, trying regular client:', adminError);
-
-        // Fallback to regular client
-        const { data, error } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('conversation_id', conversationId)
-            .order('created_at', { ascending: true });
-
-        if (error) {
-            console.error('Both admin and regular client failed:', error);
-            throw error;
-        }
-
-        console.log('Regular client result:', data?.length || 0, 'messages');
-
-        if (!data) {
-            return [];
-        }
-
-        return data.map(msg => ({
-            ...msg,
-            created_at: new Date(msg.created_at)
-        })) as Message[];
-
-    } catch (error) {
-        console.error('Error in getConversationMessages_Admin:', error);
         throw error;
     }
 };
@@ -477,18 +445,10 @@ export const getStudentStats = async (studentId: string) => {
   return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
-// --- ADMIN PANEL ---
+// --- ADMIN PANEL (NOW SECURE) ---
 export const getAllUsers = async (): Promise<Profile[]> => {
     try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_users_admin');
-        if (!rpcError && rpcData) {
-            return rpcData as Profile[];
-        }
-        const { data: directData, error: directError } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-        if (directError) {
-            throw new Error(`Unable to fetch users. Error: ${directError.message}`);
-        }
-        return directData as Profile[];
+        return await callAdminFunction('getAllUsers');
     } catch (error: any) {
         throw new Error(`Unable to fetch user data: ${error.message}`);
     }
@@ -496,24 +456,46 @@ export const getAllUsers = async (): Promise<Profile[]> => {
 
 // Admin function to get ALL conversations (including soft-deleted)
 export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('user_id', userId)
-    .order('updated_at', { ascending: false });
-  if (error) throw error;
-  return data.map(conv => ({
-      ...conv,
-      created_at: new Date(conv.created_at),
-      updated_at: new Date(conv.updated_at),
-  })) as Conversation[];
+  try {
+    const conversations = await callAdminFunction('getUserConversations', { userId });
+    return conversations.map((conv: any) => ({
+        ...conv,
+        created_at: new Date(conv.created_at),
+        updated_at: new Date(conv.updated_at),
+    }));
+  } catch (error: any) {
+    throw new Error(`Failed to load conversations: ${error.message}`);
+  }
 };
 
 // Hard delete for admins only
 export const permanentDeleteConversation = async (id: string): Promise<void> => {
-  const adminClient = getAdminClient();
-  const { error } = await adminClient.from('conversations').delete().eq('id', id);
-  if (error) throw new Error(`Failed to permanently delete conversation: ${error.message}`);
+  try {
+    await callAdminFunction('deleteConversation', { conversationId: id });
+  } catch (error: any) {
+    throw new Error(`Failed to permanently delete conversation: ${error.message}`);
+  }
+};
+
+// Admin-specific message fetching function
+export const getConversationMessages_Admin = async (conversationId: string): Promise<Message[]> => {
+    console.log('Admin: Fetching messages for conversation ID:', conversationId);
+
+    if (!conversationId || conversationId.trim() === '') {
+        console.error('Invalid conversation ID provided:', conversationId);
+        throw new Error('Conversation ID is required');
+    }
+
+    try {
+        const messages = await callAdminFunction('getMessages', { conversationId });
+        return messages.map((msg: any) => ({
+            ...msg,
+            created_at: new Date(msg.created_at)
+        }));
+    } catch (error: any) {
+        console.error('Error in getConversationMessages_Admin:', error);
+        throw new Error(`Failed to load messages: ${error.message}`);
+    }
 };
 
 export const createUser = async (userData: { email: string; password: string; full_name: string; role: 'student' | 'teacher' }): Promise<any> => {
@@ -522,20 +504,9 @@ export const createUser = async (userData: { email: string; password: string; fu
     if (!userData.password?.trim() || userData.password.length < 6) throw new Error('Password must be at least 6 characters long');
     if (!userData.full_name?.trim()) throw new Error('Full name is required');
     if (!['student', 'teacher'].includes(userData.role)) throw new Error('Role must be either student or teacher');
-    const adminClient = getAdminClient();
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email: userData.email.trim(),
-      password: userData.password.trim(),
-      email_confirm: true,
-      user_metadata: { full_name: userData.full_name.trim(), role: userData.role }
-    });
-
-    if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
-    if (!authData.user) throw new Error('User creation succeeded but no user data returned');
-
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    return authData.user;
+    
+    const result = await callAdminFunction('createUser', userData);
+    return result.user;
 
   } catch (error: any) {
     if (error.message?.includes('already registered')) throw new Error('A user with this email address already exists');
@@ -547,12 +518,8 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
   try {
     if (!teacherId?.trim() || !studentId?.trim()) throw new Error('Teacher and Student IDs are required.');
     if (teacherId === studentId) throw new Error('A user cannot be assigned to themselves.');
-    const adminClient = getAdminClient();
-    const { error } = await adminClient
-      .from('profiles')
-      .update({ teacher_id: teacherId })
-      .eq('id', studentId);
-    if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
+    
+    await callAdminFunction('assignTeacher', { teacherId, studentId });
 
   } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
