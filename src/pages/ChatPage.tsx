@@ -16,28 +16,22 @@ import * as db from '../services/supabaseService';
 
 export default function ChatPage() {
   const { profile, loading, error } = useAuth();
-
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [assignedQuizzes, setAssignedQuizzes] = useState<QuizAssignmentWithDetails[]>([]);
   const [settings, setSettings] = useState<APISettings>(() => storageUtils.getSettings());
   const [initialized, setInitialized] = useState(false);
-
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
-
   const [isQuizLoading, setIsQuizLoading] = useState(false);
   const [currentQuizSession, setCurrentQuizSession] = useState<StudySession | null>(null);
   const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTeacherDashboard, setShowTeacherDashboard] = useState(false);
-
   const stopStreamingRef = useRef(false);
   const [sidebarFolded, setSidebarFolded] = useState(() => {
     try {
@@ -47,12 +41,10 @@ export default function ChatPage() {
     }
   });
 
-  // Initialize aiService with settings
   useEffect(() => {
     aiService.updateSettings(settings);
   }, []);
 
-  // Save settings to localStorage
   useEffect(() => {
     storageUtils.saveSettings(settings);
     aiService.updateSettings(settings);
@@ -102,20 +94,16 @@ export default function ChatPage() {
     await createNewConversation('New Chat');
   }, [createNewConversation]);
 
-  // Effect to fetch initial data for the user
   useEffect(() => {
     if (!profile || initialized) return;
-
     const fetchInitialData = async () => {
       try {
         const [userConversations, userNotes] = await Promise.all([
           db.getConversations(profile.id),
           db.getNotes(profile.id)
         ]);
-
         setConversations(userConversations);
         setNotes(userNotes);
-
         if (userConversations.length > 0) {
           setCurrentConversationId(userConversations[0].id);
         } else {
@@ -131,11 +119,9 @@ export default function ChatPage() {
         setInitialized(true);
       }
     };
-
     fetchInitialData();
   }, [profile, initialized]);
 
-  // Effect to fetch messages for the currently selected conversation
   useEffect(() => {
     if (!currentConversationId) return;
     const currentConvo = conversations.find(c => c.id === currentConversationId);
@@ -280,7 +266,6 @@ export default function ChatPage() {
         return;
       }
     }
-
     const userMessage: Message = {
       id: generateId(),
       conversation_id: conversationToUseId,
@@ -289,22 +274,18 @@ export default function ChatPage() {
       role: 'user',
       created_at: new Date()
     };
-
     setConversations(prev => prev.map(c => c.id === conversationToUseId ? {
       ...c,
       messages: [...(c.messages || []), userMessage],
     } : c));
-
     setIsChatLoading(true);
     stopStreamingRef.current = false;
-
     db.addMessage({
       conversation_id: userMessage.conversation_id,
       user_id: userMessage.user_id,
       content: userMessage.content,
       role: userMessage.role,
     }).catch(err => console.error("Failed to save user message:", err));
-
     const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
     if (isFirstMessage) {
       const newTitle = generateConversationTitle(content);
@@ -313,7 +294,6 @@ export default function ChatPage() {
     } else {
       db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
     }
-
     try {
       const assistantMessage: Message = {
         id: generateId(),
@@ -324,27 +304,22 @@ export default function ChatPage() {
         created_at: new Date(),
         model: settings.selectedModel
       };
-
       setStreamingMessage(assistantMessage);
-
       const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
       const messagesForApi = latestMessages.map(m => ({
         role: m.role,
         content: m.content
       }));
-
       let fullResponse = '';
-      for await (const chunk of aiService.generateStreamingResponse(messagesForApi)) {
+
+      for await (const chunk of aiService.generateStreamingResponse(messagesForApi, profile.id)) {
         if (stopStreamingRef.current) break;
         fullResponse += chunk;
         setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
       }
-
       if (!stopStreamingRef.current && fullResponse.trim()) {
         const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
-
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
-
         setConversations(prev => prev.map(c => {
           if (c.id === conversationToUseId) {
             const existingMessages = c.messages || [];
@@ -380,7 +355,6 @@ export default function ChatPage() {
       console.warn('Need at least 2 messages to generate quiz');
       return;
     }
-
     setIsQuizLoading(true);
     try {
       const quizSession = await aiService.generateQuiz(currentConversation);
@@ -396,14 +370,11 @@ export default function ChatPage() {
 
   const handleDeleteConversation = useCallback(async (id: string) => {
     const originalConversations = conversations;
-
     const remaining = conversations.filter(c => c.id !== id);
     setConversations(remaining);
-
     if (currentConversationId === id) {
       setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
     }
-
     try {
       await db.deleteConversation(id);
     } catch (err) {
@@ -477,7 +448,6 @@ export default function ChatPage() {
       {sidebarOpen && window.innerWidth < 1024 && (
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       )}
-
       <Sidebar
         conversations={conversations}
         notes={notes}
@@ -502,7 +472,6 @@ export default function ChatPage() {
         onToggleTeacherDashboard={handleToggleTeacherDashboard}
         onSwitchToChatView={handleSwitchToChatView}
       />
-
       <div className="main-content">
         {!sidebarOpen && (
           <button
@@ -513,7 +482,6 @@ export default function ChatPage() {
             <Menu className="text-white" />
           </button>
         )}
-
         {showAdminPanel ? (
           <AdminPanelComponent onClose={handleToggleAdminPanel} />
         ) : showTeacherDashboard ? (
@@ -545,14 +513,10 @@ export default function ChatPage() {
           />
         )}
       </div>
-
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onSaveSettings={setSettings}
       />
-
       <QuizModal
         isOpen={isQuizModalOpen}
         onClose={() => {
@@ -565,65 +529,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
-
-// Add this component temporarily to your ChatPage.tsx to debug the issue
-
-import { useAuth } from '../hooks/useAuth';
-import { useEffect, useRef } from 'react';
-
-export const RoleDebugger = () => {
-  const { profile, session } = useAuth();
-  const roleHistoryRef = useRef<Array<{timestamp: string, role: string, source: string}>>([]);
-
-  useEffect(() => {
-    if (profile?.role) {
-      const entry = {
-        timestamp: new Date().toISOString(),
-        role: profile.role,
-        source: 'profile_change'
-      };
-      
-      // Only log if role actually changed
-      const lastEntry = roleHistoryRef.current[roleHistoryRef.current.length - 1];
-      if (!lastEntry || lastEntry.role !== profile.role) {
-        roleHistoryRef.current.push(entry);
-        console.log('🔍 ROLE CHANGE DETECTED:', entry);
-        console.log('📊 Role History:', roleHistoryRef.current);
-        
-        // Check session metadata too
-        console.log('👤 Session User Metadata:', session?.user?.user_metadata);
-        console.log('📧 User Email:', session?.user?.email);
-      }
-    }
-  }, [profile?.role, session]);
-
-  // Only show in development
-  if (process.env.NODE_ENV !== 'development') return null;
-
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: '10px',
-      right: '10px',
-      background: 'rgba(0,0,0,0.8)',
-      color: 'white',
-      padding: '10px',
-      borderRadius: '5px',
-      fontSize: '12px',
-      zIndex: 9999,
-      maxWidth: '300px'
-    }}>
-      <div><strong>Current Role:</strong> {profile?.role || 'None'}</div>
-      <div><strong>User ID:</strong> {profile?.id?.slice(0, 8)}...</div>
-      <div><strong>Email:</strong> {profile?.email}</div>
-      <div><strong>Metadata Role:</strong> {session?.user?.user_metadata?.role || 'None'}</div>
-      <div><strong>Changes:</strong> {roleHistoryRef.current.length}</div>
-      {roleHistoryRef.current.length > 1 && (
-        <div style={{marginTop: '5px', fontSize: '10px'}}>
-          <strong>Last change:</strong> {roleHistoryRef.current[roleHistoryRef.current.length - 1]?.timestamp}
-        </div>
-      )}
-    </div>
-  );
-};
