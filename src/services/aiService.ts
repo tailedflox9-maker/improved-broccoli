@@ -3,36 +3,31 @@ import { generateId } from '../utils/helpers';
 import { supabase } from '../supabase';
 import * as db from './supabaseService';
 
-// **FIX**: API keys are now read directly from environment variables.
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 const ZHIPU_API_KEY = import.meta.env.VITE_ZHIPU_API_KEY;
 const MISTRAL_API_KEY = import.meta.env.VITE_MISTRAL_API_KEY;
 
-const systemPrompt = `You are an enthusiastic AI tutor who makes learning engaging and accessible. Your responses should feel natural and conversational while being educationally valuable.
-
+const baseSystemPrompt = `You are an enthusiastic AI tutor who makes learning engaging and accessible. Your responses should feel natural and conversational while being educationally valuable.
 PERSONALITY & TONE:
 - Warm, encouraging, and genuinely excited about helping students learn
 - Use natural, conversational language - not overly formal or robotic
 - Show enthusiasm for the subject matter
 - Be patient and supportive when concepts are challenging
 - Celebrate student progress and curiosity
-
 RESPONSE STYLE:
 - Start naturally based on what the student asked - no rigid templates
 - Use markdown formatting to make content visually appealing and organized
 - Break complex topics into digestible chunks with clear explanations
 - Include relevant examples, analogies, and real-world connections
 - End by encouraging further questions or exploration
-
 FORMATTING FOR CLARITY:
 Use markdown strategically to enhance understanding:
 - **Bold** for key terms and important concepts
-- *Italics* for emphasis 
+- *Italics* for emphasis
 - Code blocks for formulas, equations, or structured information
 - Tables when comparing things or organizing data
 - Lists for steps, examples, or key points
 - Blockquotes for important principles or insights
-
 EDUCATIONAL APPROACH:
 - Focus exclusively on academic subjects and learning
 - Build on prior knowledge when possible
@@ -40,21 +35,18 @@ EDUCATIONAL APPROACH:
 - Include practice opportunities or thought-provoking questions
 - Connect topics to broader learning and real-world applications
 - Suggest next steps for deeper understanding
-
 FOR DIFFERENT SUBJECTS:
 - **Math**: Show step-by-step solutions, explain reasoning, highlight common mistakes
 - **Science**: Use experiments, observations, and evidence-based thinking
 - **History**: Provide context, multiple perspectives, cause-and-effect relationships
 - **Language Arts**: Focus on comprehension, analysis, and clear communication
 - **Other subjects**: Apply appropriate academic thinking and methodology
-
 KEEP RESPONSES:
 - Conversational and natural (not template-driven)
 - Visually organized with markdown formatting
 - Educational and academically focused
 - Encouraging and supportive
 - Appropriately detailed for the question asked
-
 Remember: You're having a natural conversation about learning, not filling out a worksheet. Adapt your response style to what the student actually needs, whether that's a quick clarification, detailed explanation, or guided practice.`;
 
 async function* streamOpenAICompatResponse(
@@ -62,6 +54,7 @@ async function* streamOpenAICompatResponse(
   apiKey: string,
   model: string,
   messages: { role: string; content: string }[],
+  systemPrompt: string
 ): AsyncGenerator<string> {
   const messagesWithSystemPrompt = [{ role: 'system', content: systemPrompt }, ...messages];
   const response = await fetch(url, {
@@ -98,14 +91,31 @@ async function* streamOpenAICompatResponse(
 
 class AiService {
   private settings: APISettings = { selectedModel: 'google' };
-
   public updateSettings(newSettings: APISettings) {
     this.settings = newSettings;
   }
 
-  public async *generateStreamingResponse(messages: { role: string; content: string }[]): AsyncGenerator<string> {
-    const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
+  private async generatePersonalizedSystemPrompt(userId?: string): Promise<string> {
+    if (!userId) {
+      return baseSystemPrompt;
+    }
+    try {
+      const studentProfile = await db.getActiveStudentProfileForChat(userId);
+      if (studentProfile) {
+        return db.generatePersonalizedPrompt(studentProfile, baseSystemPrompt);
+      }
+    } catch (error) {
+      console.warn('Could not load student profile for personalization:', error);
+    }
+    return baseSystemPrompt;
+  }
 
+  public async *generateStreamingResponse(
+    messages: { role: string; content: string }[],
+    userId?: string
+  ): AsyncGenerator<string> {
+    const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
+    const systemPrompt = await this.generatePersonalizedSystemPrompt(userId);
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
@@ -143,15 +153,15 @@ class AiService {
       }
       case 'zhipu':
         if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://open.bigmodel.cn/api/paas/v4/chat/completions', ZHIPU_API_KEY, 'glm-4-flash', userMessages);
+        yield* streamOpenAICompatResponse('https://open.bigmodel.cn/api/paas/v4/chat/completions', ZHIPU_API_KEY, 'glm-4-flash', userMessages, systemPrompt);
         break;
       case 'mistral-small':
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'mistral-small-latest', userMessages);
+        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'mistral-small-latest', userMessages, systemPrompt);
         break;
       case 'mistral-codestral':
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'codestral-latest', userMessages);
+        yield* streamOpenAICompatResponse('https://api.mistral.ai/v1/chat/completions', MISTRAL_API_KEY, 'codestral-latest', userMessages, systemPrompt);
         break;
       default:
         throw new Error('Invalid model selected.');
@@ -166,7 +176,7 @@ class AiService {
         }
         const questions: QuizQuestion[] = parsed.questions.map((q: any) => {
             if (!q.options || !Array.isArray(q.options) || !q.answer) {
-                return null; // Skip invalid questions
+                return null;
             }
             const correctAnswerIndex = q.options.indexOf(q.answer);
             return {
@@ -177,7 +187,7 @@ class AiService {
                 explanation: q.explanation
             };
         }).filter((q: any): q is QuizQuestion => q !== null && q.correctAnswer !== -1);
-        
+
         if (questions.length === 0) {
             throw new Error("No valid questions could be generated from the API response.");
         }
@@ -192,28 +202,24 @@ class AiService {
     if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
     const conversationText = conversation.messages.map(m => `${m.role === 'user' ? 'Student:' : 'Tutor:'} ${m.content}`).join('\n\n');
     const quizPrompt = `Create a quiz based on our tutoring conversation. Make 5 multiple-choice questions that test understanding of the key concepts we discussed.
-
 Make the questions:
 - Clear and well-written
-- Test real understanding, not just memorization  
+- Test real understanding, not just memorization
 - Include one obviously wrong answer, two plausible but incorrect answers, and one clearly correct answer
 - Have helpful explanations that reinforce the learning
-
 Format as JSON with "questions" array. Each question needs:
 - "question": the question text
 - "options": array of exactly 4 answer choices
 - "answer": the correct choice (must exactly match one of the 4 options)
 - "explanation": brief explanation of why this answer is correct
-
 Our conversation:
 ${conversationText.slice(0, 8000)}`;
-
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        contents: [{ parts: [{ text: quizPrompt }] }], 
-        generationConfig: { responseMimeType: "application/json" } 
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: quizPrompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
       }),
     });
     if (!response.ok) {
@@ -229,52 +235,46 @@ ${conversationText.slice(0, 8000)}`;
 
   public async generateQuizFromTopic(topic: string): Promise<GeneratedQuiz> {
     if (!GOOGLE_API_KEY) throw new Error('Google API key must be configured to generate quizzes.');
-    
-    // Get the current user's profile to extract the teacher_id
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
-    
+
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id, role')
       .eq('id', user.id)
       .single();
-      
+
     if (profileError || !profile) {
       throw new Error('Could not retrieve user profile');
     }
-    
+
     if (profile.role !== 'teacher') {
       throw new Error('Only teachers can generate quizzes');
     }
-    
-    const teacherId = profile.id;
-    
-    const topicQuizPrompt = `Create a high-quality quiz for high school students on: "${topic}"
 
+    const teacherId = profile.id;
+
+    const topicQuizPrompt = `Create a high-quality quiz for high school students on: "${topic}"
 Create 5 multiple-choice questions that:
 - Test understanding of key concepts (not just facts)
 - Are challenging but fair for the grade level
 - Have clear, well-written questions
 - Include plausible wrong answers that test common misconceptions
-
 Format as JSON with "questions" array. Each question needs:
 - "question": clear, properly written question
-- "options": exactly 4 answer choices  
+- "options": exactly 4 answer choices
 - "answer": the correct option (must match exactly)
 - "explanation": brief explanation that helps students learn
-
 Focus on the most important concepts students need to master about this topic.`;
-
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        contents: [{ parts: [{ text: topicQuizPrompt }] }], 
-        generationConfig: { responseMimeType: "application/json" } 
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: topicQuizPrompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
       }),
     });
-
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`API Error generating quiz: ${response.status} - ${errorText}`);
@@ -282,13 +282,10 @@ Focus on the most important concepts students need to master about this topic.`;
     const data = await response.json();
     const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) throw new Error('Invalid API response when generating quiz from topic.');
-    
-    const questions = await this.parseQuizResponse(textResponse);
 
-    // Save the generated quiz to the database
+    const questions = await this.parseQuizResponse(textResponse);
     const newQuizData = { teacher_id: teacherId, topic, questions };
     const savedQuiz = await db.createGeneratedQuiz(newQuizData);
-
     return savedQuiz;
   }
 }
