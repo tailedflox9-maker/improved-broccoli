@@ -36,7 +36,7 @@ serve(async (req) => {
       .single()
 
     if (profileError || profile?.role !== 'admin') {
-      return new Response('Forbidden', { status: 403, headers: corsHeaders })
+      return new Response('Forbidden - Admin access required', { status: 403, headers: corsHeaders })
     }
 
     const { action, ...body } = await req.json()
@@ -58,8 +58,9 @@ serve(async (req) => {
         return new Response('Invalid action', { status: 400, headers: corsHeaders })
     }
   } catch (error) {
+    console.error('Edge function error:', error)
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 400,
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
