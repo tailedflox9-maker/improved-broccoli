@@ -3,11 +3,11 @@ import { useAuth } from '../hooks/useAuth';
 import * as db from '../services/supabaseService';
 import { aiService } from '../services/aiService';
 import { Profile, FlaggedMessage, GeneratedQuiz } from '../types';
-import { 
-  BookOpen, 
-  MessageSquare, 
-  CheckCircle, 
-  Users, 
+import {
+  BookOpen,
+  MessageSquare,
+  CheckCircle,
+  Users,
   GraduationCap,
   TrendingUp,
   RefreshCw,
@@ -21,9 +21,11 @@ import {
   Share2,
   Eye,
   Trash2,
-  Award
+  Award,
+  UserCog
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
+import { StudentProfilesComponent } from './StudentProfilesComponent';
 
 interface StudentStats {
   questionCount: number;
@@ -42,92 +44,64 @@ export function TeacherDashboardComponent() {
   const [generatedQuizzes, setGeneratedQuizzes] = useState<GeneratedQuiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Quiz Modal State
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles'>('dashboard');
   const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
   const [quizTopic, setQuizTopic] = useState('');
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [quizError, setQuizError] = useState('');
-  
-  // Assignment Modal State
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState<GeneratedQuiz | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [isAssigning, setIsAssigning] = useState(false);
-
-  // Quiz Review Modal State
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewQuiz, setReviewQuiz] = useState<GeneratedQuiz | null>(null);
 
   const fetchData = async () => {
     const userId = user?.id || profile?.id;
-    
-    if (!userId) {
-      console.log('No user ID available for fetching teacher data');
-      return;
-    }
-    
-    console.log('Fetching data for teacher:', userId);
+    if (!userId) return;
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      console.log('Calling getStudentsForTeacher...');
-      const studentsPromise = db.getStudentsForTeacher(userId).catch(err => {
-        console.error('Error fetching students:', err);
-        return [];
-      });
-      
-      console.log('Calling getFlaggedMessagesForTeacher...');
-      const messagesPromise = db.getFlaggedMessagesForTeacher(userId).catch(err => {
-        console.error('Error fetching flagged messages:', err);
-        return [];
-      });
-
-      console.log('Calling getGeneratedQuizzesForTeacher...');
-      const quizzesPromise = db.getGeneratedQuizzesForTeacher(userId).catch(err => {
-        console.error('Error fetching generated quizzes:', err);
-        return [];
-      });
-
       const [assignedStudents, messages, quizzes] = await Promise.all([
-        studentsPromise,
-        messagesPromise,
-        quizzesPromise
+        db.getStudentsForTeacher(userId).catch(err => {
+          console.error('Error fetching students:', err);
+          return [];
+        }),
+        db.getFlaggedMessagesForTeacher(userId).catch(err => {
+          console.error('Error fetching flagged messages:', err);
+          return [];
+        }),
+        db.getGeneratedQuizzesForTeacher(userId).catch(err => {
+          console.error('Error fetching generated quizzes:', err);
+          return [];
+        }),
       ]);
 
-      console.log('Assigned students:', assignedStudents);
-      console.log('Flagged messages:', messages);
-      console.log('Generated quizzes:', quizzes);
-
-      // Fetch stats for each student with improved quiz data
       const studentsWithStats = await Promise.all(
         assignedStudents.map(async (student) => {
           try {
-            console.log('Fetching stats for student:', student.id);
             const stats = await db.getStudentStatsImproved(student.id);
-            console.log('Stats for', student.full_name, ':', stats);
             return { ...student, stats };
           } catch (err) {
             console.error(`Error fetching stats for student ${student.id}:`, err);
-            return { 
-              ...student, 
-              stats: { 
-                questionCount: 0, 
-                quizAttempts: 0, 
-                averageScore: 0 
-              } 
+            return {
+              ...student,
+              stats: {
+                questionCount: 0,
+                quizAttempts: 0,
+                averageScore: 0
+              }
             };
           }
         })
       );
 
-      console.log('Students with stats:', studentsWithStats);
-      
       setStudents(studentsWithStats);
       setFlaggedMessages(messages);
       setGeneratedQuizzes(quizzes);
-      
+
     } catch (error: any) {
       console.error('Error in fetchData:', error);
       setError(error.message || "Failed to load dashboard data.");
@@ -140,21 +114,19 @@ export function TeacherDashboardComponent() {
     const userId = user?.id || profile?.id;
     if (userId) {
       fetchData();
-    } else {
-      console.log('User/profile not available yet, waiting...');
     }
   }, [user?.id, profile?.id]);
-  
+
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quizTopic.trim()) {
       setQuizError("Please enter a topic for the quiz.");
       return;
     }
-    
+
     setIsGeneratingQuiz(true);
     setQuizError('');
-    
+
     try {
       const newQuiz = await aiService.generateQuizFromTopic(quizTopic);
       setGeneratedQuizzes(prev => [newQuiz, ...prev]);
@@ -180,28 +152,25 @@ export function TeacherDashboardComponent() {
       alert('Please select at least one student to assign the quiz to.');
       return;
     }
-
     if (!user?.id && !profile?.id) {
       alert('Unable to identify teacher. Please try logging in again.');
       return;
     }
-
     const teacherId = user?.id || profile?.id!;
-    
+
     setIsAssigning(true);
     try {
       await db.assignQuizToStudents(
         selectedQuiz.id,
         teacherId,
         selectedStudents,
-        null // Removed deadline
+        null
       );
-      
+
       alert(`Successfully assigned "${selectedQuiz.topic}" to ${selectedStudents.length} student(s)!`);
       setIsAssignModalOpen(false);
       setSelectedQuiz(null);
       setSelectedStudents([]);
-      // Refresh data to update assignment counts
       await fetchData();
     } catch (error: any) {
       console.error('Assignment error:', error);
@@ -220,7 +189,6 @@ export function TeacherDashboardComponent() {
     if (!confirm(`Are you sure you want to delete the quiz "${quiz.topic}"? This action cannot be undone.`)) {
       return;
     }
-
     try {
       await db.deleteGeneratedQuiz(quiz.id);
       setGeneratedQuizzes(prev => prev.filter(q => q.id !== quiz.id));
@@ -232,7 +200,7 @@ export function TeacherDashboardComponent() {
   };
 
   const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudents(prev => 
+    setSelectedStudents(prev =>
       prev.includes(studentId)
         ? prev.filter(id => id !== studentId)
         : [...prev, studentId]
@@ -242,8 +210,8 @@ export function TeacherDashboardComponent() {
   const totals = useMemo(() => ({
     questions: students.reduce((acc, s) => acc + s.stats.questionCount, 0),
     quizzes: students.reduce((acc, s) => acc + s.stats.quizAttempts, 0),
-    average: students.length > 0 
-      ? students.reduce((acc, s) => acc + s.stats.averageScore, 0) / students.length 
+    average: students.length > 0
+      ? students.reduce((acc, s) => acc + s.stats.averageScore, 0) / students.length
       : 0,
   }), [students]);
 
@@ -254,8 +222,8 @@ export function TeacherDashboardComponent() {
         <span className="text-xs font-bold text-white">{score.toFixed(1)}%</span>
       </div>
       <div className="w-full bg-gray-700/50 rounded-full h-1.5">
-        <div 
-          className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" 
+        <div
+          className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
           style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
         />
       </div>
@@ -275,19 +243,47 @@ export function TeacherDashboardComponent() {
     );
   }
 
+  if (activeTab === 'profiles') {
+    return <StudentProfilesComponent onClose={() => setActiveTab('dashboard')} />;
+  }
+
   return (
     <>
     <div className="h-full overflow-y-auto bg-grid-slate-900">
       <div className="p-6 space-y-8 max-w-7xl mx-auto">
-        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <GraduationCap size={28} className="text-blue-500" /> 
+            <GraduationCap size={28} className="text-blue-500" />
             Teacher Dashboard
           </h1>
           <p className="text-gray-400 mt-1">
             Monitor progress, review content, and create learning materials.
           </p>
+
+          <div className="flex mt-4 border-b border-white/20">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+                activeTab === 'dashboard'
+                  ? 'text-blue-400 border-blue-400'
+                  : 'text-gray-400 border-transparent hover:text-white hover:border-gray-400'
+              }`}
+            >
+              <GraduationCap size={16} className="inline mr-2" />
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('profiles')}
+              className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+                activeTab === 'profiles'
+                  ? 'text-blue-400 border-blue-400'
+                  : 'text-gray-400 border-transparent hover:text-white hover:border-gray-400'
+              }`}
+            >
+              <UserCog size={16} className="inline mr-2" />
+              Student Profiles
+            </button>
+          </div>
           {process.env.NODE_ENV === 'development' && (
             <p className="text-xs text-gray-500 mt-2">
               User ID: {user?.id || profile?.id} | Students: {students.length} | Messages: {flaggedMessages.length} | Quizzes: {generatedQuizzes.length}
@@ -295,7 +291,6 @@ export function TeacherDashboardComponent() {
           )}
         </div>
 
-        {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           <div className="stats-card">
             <Users size={24} className="text-blue-500 mb-3"/>
@@ -318,10 +313,9 @@ export function TeacherDashboardComponent() {
             <p className="text-gray-400">Class Average</p>
           </div>
         </div>
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-6">
-            {/* Class Tools */}
             <div className="admin-card">
               <h3 className="card-header">
                 <ClipboardCheck size={18} /> Class Tools
@@ -330,16 +324,21 @@ export function TeacherDashboardComponent() {
                 <p className="text-sm text-gray-400">
                   Generate a quiz on any topic for your class to complete.
                 </p>
-                <button 
-                  onClick={() => setIsQuizModalOpen(true)} 
+                <button
+                  onClick={() => setIsQuizModalOpen(true)}
                   className="btn-primary w-full"
                 >
                   <PlusCircle size={16} /> Generate New Quiz
                 </button>
+                 <button
+                  onClick={() => setActiveTab('profiles')}
+                  className="btn-secondary w-full"
+                >
+                  <UserCog size={16} /> Manage Student Profiles
+                </button>
               </div>
             </div>
 
-            {/* Generated Quizzes */}
             <div className="admin-card">
               <h3 className="card-header">Generated Quizzes ({generatedQuizzes.length})</h3>
               <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
@@ -354,20 +353,20 @@ export function TeacherDashboardComponent() {
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
-                        <button 
+                        <button
                           onClick={() => handleReviewQuiz(quiz)}
                           className="flex-1 text-xs px-2 py-1 bg-blue-900/50 text-blue-300 rounded hover:bg-blue-900/70"
                         >
                           <Eye size={12} className="inline mr-1"/> Review
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleAssignQuiz(quiz)}
                           className="flex-1 text-xs px-2 py-1 bg-green-900/50 text-green-300 rounded hover:bg-green-900/70"
                           disabled={students.length === 0}
                         >
                           <Share2 size={12} className="inline mr-1"/> Assign
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeleteQuiz(quiz)}
                           className="flex-1 text-xs px-2 py-1 bg-red-900/50 text-red-300 rounded hover:bg-red-900/70"
                         >
@@ -384,13 +383,11 @@ export function TeacherDashboardComponent() {
               </div>
             </div>
           </div>
-
           <div className="lg:col-span-2 space-y-8">
-            {/* Flagged Messages */}
             <div className="admin-card">
               <div className="card-header flex justify-between items-center">
                 <h3 className="flex items-center gap-3">
-                  <Flag size={18} className="text-yellow-400" /> 
+                  <Flag size={18} className="text-yellow-400" />
                   Flagged Messages for Review
                 </h3>
                 <span className="text-sm font-bold bg-yellow-900/50 text-yellow-300 px-2 py-0.5 rounded-full">
@@ -417,36 +414,35 @@ export function TeacherDashboardComponent() {
                 )}
               </div>
             </div>
-            
-            {/* Student Progress */}
+
             <div className="admin-card">
               <div className="card-header flex justify-between items-center">
                 <h3 className="flex items-center gap-3">
                   <User size={18}/> Student Progress
                 </h3>
-                <button 
-                  onClick={fetchData} 
-                  disabled={loading} 
+                <button
+                  onClick={fetchData}
+                  disabled={loading}
                   className="btn-secondary"
                 >
-                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> 
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
                   Refresh
                 </button>
               </div>
-              
+
               {loading && (
                 <div className="text-center p-12">
                   <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" />
                   <p className="text-gray-400 mt-2">Loading students...</p>
                 </div>
               )}
-              
+
               {error && (
                 <div className="text-center p-12">
                   <AlertTriangle className="w-8 h-8 mx-auto text-red-500" />
                   <p className="text-red-400 font-semibold mt-2">Error Loading Data</p>
                   <p className="text-gray-400 text-sm">{error}</p>
-                  <button 
+                  <button
                     onClick={fetchData}
                     className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
@@ -454,7 +450,7 @@ export function TeacherDashboardComponent() {
                   </button>
                 </div>
               )}
-              
+
               {!loading && !error && students.length === 0 && (
                 <div className="text-center p-20">
                   <Users size={48} className="mx-auto text-gray-600 mb-4" />
@@ -464,12 +460,12 @@ export function TeacherDashboardComponent() {
                   </p>
                 </div>
               )}
-              
+
               {!loading && !error && students.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
                   {students.map((student) => (
-                    <div 
-                      key={student.id} 
+                    <div
+                      key={student.id}
                       className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-5 space-y-4 transition-all hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-900/10"
                     >
                       <div className="flex items-center gap-3">
@@ -483,16 +479,16 @@ export function TeacherDashboardComponent() {
                           <p className="text-sm text-gray-400 truncate">{student.email}</p>
                         </div>
                       </div>
-                      
+
                       <ProgressBar score={student.stats.averageScore} />
-                      
+
                       <div className="flex justify-between items-center text-sm pt-4 border-t border-white/10">
                         <div className="flex items-center gap-2 text-gray-300">
-                          <MessageSquare size={14} className="text-green-400"/> 
+                          <MessageSquare size={14} className="text-green-400"/>
                           Questions: <span className="font-bold text-white">{student.stats.questionCount}</span>
                         </div>
                         <div className="flex items-center gap-2 text-gray-300">
-                          <CheckCircle size={14} className="text-purple-400"/> 
+                          <CheckCircle size={14} className="text-purple-400"/>
                           Quizzes: <span className="font-bold text-white">{student.stats.quizAttempts}</span>
                         </div>
                       </div>
@@ -505,39 +501,38 @@ export function TeacherDashboardComponent() {
         </div>
       </div>
     </div>
-    
-    {/* Quiz Generation Modal */}
+
     {isQuizModalOpen && (
-      <div 
-        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
+      <div
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
         onClick={() => setIsQuizModalOpen(false)}
       >
-        <div 
-          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-lg w-full" 
+        <div
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-lg w-full"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <ClipboardCheck size={20}/> Generate Quiz
             </h2>
-            <button 
-              onClick={() => setIsQuizModalOpen(false)} 
+            <button
+              onClick={() => setIsQuizModalOpen(false)}
               className="p-2 hover:bg-[var(--color-border)] rounded-lg"
             >
               <X size={18}/>
             </button>
           </div>
-          
+
           <form onSubmit={handleGenerateQuiz}>
             <div className="p-6 space-y-4">
               <div>
                 <label className="input-label">Quiz Topic</label>
-                <input 
-                  type="text" 
-                  value={quizTopic} 
-                  onChange={e => setQuizTopic(e.target.value)} 
-                  placeholder="e.g., 'Photosynthesis' or 'The American Revolution'" 
-                  required 
+                <input
+                  type="text"
+                  value={quizTopic}
+                  onChange={e => setQuizTopic(e.target.value)}
+                  placeholder="e.g., 'Photosynthesis' or 'The American Revolution'"
+                  required
                   className="input-style"
                 />
                 <p className="text-xs text-gray-500 mt-1.5">
@@ -546,11 +541,11 @@ export function TeacherDashboardComponent() {
               </div>
               {quizError && <p className="text-red-400 text-sm">{quizError}</p>}
             </div>
-            
+
             <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-end">
-              <button 
-                type="submit" 
-                disabled={isGeneratingQuiz} 
+              <button
+                type="submit"
+                disabled={isGeneratingQuiz}
                 className="btn-primary w-auto px-6 py-2"
               >
                 {isGeneratingQuiz ? (
@@ -568,30 +563,28 @@ export function TeacherDashboardComponent() {
       </div>
     )}
 
-    {/* Quiz Assignment Modal */}
     {isAssignModalOpen && selectedQuiz && (
-      <div 
-        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
+      <div
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
         onClick={() => setIsAssignModalOpen(false)}
       >
-        <div 
-          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" 
+        <div
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Share2 size={20}/> Assign Quiz: {selectedQuiz.topic}
             </h2>
-            <button 
-              onClick={() => setIsAssignModalOpen(false)} 
+            <button
+              onClick={() => setIsAssignModalOpen(false)}
               className="p-2 hover:bg-[var(--color-border)] rounded-lg"
             >
               <X size={18}/>
             </button>
           </div>
-          
+
           <div className="p-6 space-y-6">
-            {/* Students Selection */}
             <div>
               <label className="input-label mb-3">Select Students ({selectedStudents.length} selected)</label>
               {students.length === 0 ? (
@@ -632,7 +625,6 @@ export function TeacherDashboardComponent() {
               )}
             </div>
 
-            {/* Quiz Preview */}
             <div>
               <label className="input-label mb-2">Quiz Preview</label>
               <div className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-3 text-sm">
@@ -647,17 +639,17 @@ export function TeacherDashboardComponent() {
               </div>
             </div>
           </div>
-          
+
           <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-between">
-            <button 
+            <button
               onClick={() => setIsAssignModalOpen(false)}
               className="btn-secondary px-6 py-2"
             >
               Cancel
             </button>
-            <button 
+            <button
               onClick={handleConfirmAssignment}
-              disabled={isAssigning || selectedStudents.length === 0} 
+              disabled={isAssigning || selectedStudents.length === 0}
               className="btn-primary px-6 py-2"
             >
               {isAssigning ? (
@@ -674,28 +666,27 @@ export function TeacherDashboardComponent() {
       </div>
     )}
 
-    {/* Quiz Review Modal */}
     {isReviewModalOpen && reviewQuiz && (
-      <div 
-        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm" 
+      <div
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
         onClick={() => setIsReviewModalOpen(false)}
       >
-        <div 
-          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-y-auto" 
+        <div
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Eye size={20}/> Review Quiz: {reviewQuiz.topic}
             </h2>
-            <button 
-              onClick={() => setIsReviewModalOpen(false)} 
+            <button
+              onClick={() => setIsReviewModalOpen(false)}
               className="p-2 hover:bg-[var(--color-border)] rounded-lg"
             >
               <X size={18}/>
             </button>
           </div>
-          
+
           <div className="p-6">
             <div className="mb-6">
               <div className="flex items-center gap-4 text-sm text-gray-400">
@@ -705,7 +696,7 @@ export function TeacherDashboardComponent() {
                 <span>Created: {formatDate(new Date(reviewQuiz.created_at))}</span>
               </div>
             </div>
-            
+
             <div className="space-y-6">
               {reviewQuiz.questions.map((question, index) => (
                 <div key={question.id} className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-4">
@@ -717,14 +708,14 @@ export function TeacherDashboardComponent() {
                       {question.question}
                     </h4>
                   </div>
-                  
+
                   <div className="ml-9 space-y-2">
                     {question.options.map((option, optIndex) => (
-                      <div 
-                        key={optIndex} 
+                      <div
+                        key={optIndex}
                         className={`p-2 rounded-lg text-sm ${
-                          question.correctAnswer === optIndex 
-                            ? 'bg-green-900/30 border border-green-500/50 text-green-300' 
+                          question.correctAnswer === optIndex
+                            ? 'bg-green-900/30 border border-green-500/50 text-green-300'
                             : 'bg-gray-800/50 text-gray-300'
                         }`}
                       >
@@ -737,7 +728,7 @@ export function TeacherDashboardComponent() {
                         )}
                       </div>
                     ))}
-                    
+
                     {question.explanation && (
                       <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
                         <p className="text-xs text-yellow-200">
@@ -750,9 +741,9 @@ export function TeacherDashboardComponent() {
               ))}
             </div>
           </div>
-          
+
           <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-end">
-            <button 
+            <button
               onClick={() => setIsReviewModalOpen(false)}
               className="btn-secondary px-6 py-2"
             >
