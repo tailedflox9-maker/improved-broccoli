@@ -57,13 +57,7 @@ export interface StudySession {
   totalQuestions: number;
   isCompleted: boolean;
   createdAt: Date;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   assignmentId?: string; // To link session to a specific assignment
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 }
 
 export interface QuizQuestion {
@@ -82,13 +76,7 @@ export interface GeneratedQuiz {
   topic: string;
   questions: QuizQuestion[];
   created_at: Date;
-  // =================================================================
-  // == START OF CHANGES
-  // =================================================================
   teacher_id: string;
-  // =================================================================
-  // == END OF CHANGES
-  // =================================================================
 }
 
 export interface FlaggedMessage {
@@ -98,9 +86,7 @@ export interface FlaggedMessage {
     student_name: string; // From joined profile
     created_at: string;
 }
-// =================================================================
-// == START OF CHANGES
-// =================================================================
+
 export interface QuizAssignment {
   id: string;
   quiz_id: string;
@@ -122,10 +108,37 @@ export interface QuizAssignmentWithDetails extends QuizAssignment {
     full_name: string | null; // Teacher's name
   };
 }
-// =================================================================
-// == END OF CHANGES
-// =================================================================
 // -------------------
+
+// =================================================================
+// == START OF NEW FEATURE: STUDENT PROFILES
+// =================================================================
+export interface StudentProfile {
+  id: string;
+  student_id: string;
+  teacher_id: string;
+  student_name: string;
+  age?: number;
+  grade_level?: string;
+  learning_strengths?: string;
+  learning_challenges?: string;
+  learning_style?: string;
+  interests?: string;
+  custom_context?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentProfileWithDetails extends StudentProfile {
+  profiles: {
+    full_name: string | null;
+    email: string;
+  };
+}
+// =================================================================
+// == END OF NEW FEATURE
+// =================================================================
 
 export type Role = 'student' | 'teacher' | 'admin';
 
@@ -178,9 +191,6 @@ export interface Database {
           Insert: any;
           Update: any;
       }
-      // =================================================================
-      // == START OF CHANGES
-      // =================================================================
       generated_quizzes: {
         Row: any;
         Insert: any;
@@ -192,7 +202,15 @@ export interface Database {
         Update: any;
       }
       // =================================================================
-      // == END OF CHANGES
+      // == START OF NEW FEATURE: STUDENT PROFILES
+      // =================================================================
+      student_profiles: {
+        Row: StudentProfile;
+        Insert: Omit<StudentProfile, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<StudentProfile, 'id' | 'student_id' | 'teacher_id' | 'created_at'>>;
+      }
+      // =================================================================
+      // == END OF NEW FEATURE
       // =================================================================
     }
     Enums: {
