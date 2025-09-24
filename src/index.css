@@ -137,11 +137,11 @@
   /* --- ENHANCED MESSAGE BUBBLES --- */
   .message-wrapper { 
     will-change: transform, opacity;
-    /* Remove flickering by using more stable animations */
-    backface-visibility: hidden;
+    /* Remove flickering by using more stable animations */    
+    backface-visibility: hidden;    
     transform: translateZ(0);
   }
-  .message-wrapper:not(.is-streaming) { 
+  .message-wrapper:not(.is-streaming):not(.was-streaming) { 
     animation: messageSlideIn 0.25s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
   }
   .message-wrapper.is-streaming {
@@ -291,13 +291,13 @@
   .chat-input-container { padding: 1rem; flex-shrink: 0; }
   @media (max-width: 768px) { .chat-input-container { padding: 0.75rem; padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); } }
   .chat-input { transition: all 0.2s ease; max-width: 48rem; margin: 0 auto; width: 100%; }
-  .chat-input:focus { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15); }
-  .chat-input-form { display: flex; align-items: end; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 1rem; padding: 0.5rem; gap: 0.5rem; }
+  .chat-input .chat-input-form:focus-within { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15); }
+  .chat-input-form { display: flex; align-items: end; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 1rem; padding: 0.25rem; gap: 0.25rem; transition: all 0.2s ease; }
   .chat-input-textarea { 
     flex: 1; 
     min-height: 24px; 
     max-height: 120px; 
-    padding: 0.5rem; 
+    padding: 0.375rem; 
     background: transparent; 
     resize: none; 
     border: none; 
@@ -336,8 +336,8 @@
   }
 
   /* --- BUTTONS --- */
-  .interactive-button { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); transform: translateZ(0); will-change: transform, box-shadow; min-height: 36px; min-width: 36px; }
-  @media (max-width: 768px) { .interactive-button { min-height: 44px; min-width: 44px; } }
+  .interactive-button { transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1); transform: translateZ(0); will-change: transform, box-shadow; min-height: 32px; min-width: 32px; }
+  @media (max-width: 768px) { .interactive-button { min-height: 40px; min-width: 40px; } }
   .interactive-button:hover { transform: translateY(-2px) translateZ(0); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
   .interactive-button:active { transform: translateY(0) translateZ(0); transition-duration: 0.1s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); }
   .interactive-button:disabled { transform: none !important; box-shadow: none !important; opacity: 0.5; cursor: not-allowed; }
