@@ -97,7 +97,8 @@
   .btn-tab { @apply text-sm font-semibold py-1.5 px-2 rounded-md transition-colors text-gray-300 hover:bg-gray-800 hover:text-white; }
   .btn-tab.active { @apply bg-gray-600 text-white; }
   .nav-btn { @apply w-full flex items-center justify-center lg:justify-start gap-3 p-2 rounded-lg text-gray-300 hover:bg-[var(--color-card)] hover:text-white font-semibold transition-colors; }
-  .nav-btn.active { @apply bg-blue-500/20 text-blue-300; }
+  /* UPDATED: Changed from blue to white highlight */
+  .nav-btn.active { @apply bg-white/10 text-white border border-white/20; }
 
   /* --- CHAT AREA --- */
   .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -108,7 +109,15 @@
   /* --- MESSAGE BUBBLES --- */
   .message-wrapper { will-change: transform, opacity; }
   .message-wrapper:not(.is-streaming) { animation: messageSlideIn 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); }
-  .message-bubble { transition: all 0.2s ease-out; transform: translateZ(0); max-width: 85%; word-wrap: break-word; overflow-wrap: break-word; }
+  /* UPDATED: Increased font weight for AI response text */
+  .message-bubble { 
+    transition: all 0.2s ease-out; 
+    transform: translateZ(0); 
+    max-width: 85%; 
+    word-wrap: break-word; 
+    overflow-wrap: break-word;
+    font-weight: 500; /* Increased from default weight */
+  }
   @media (max-width: 768px) { .message-bubble { max-width: 95%; } }
   .message-bubble:hover { transform: translateY(-1px) translateZ(0); }
 
