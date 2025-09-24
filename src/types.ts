@@ -7,6 +7,15 @@ export interface APISettings {
 // --- All other types remain the same ---
 export type TutorMode = 'standard' | 'exam' | 'mentor' | 'creative';
 
+// --- Visual Content Types ---
+export type VisualContentType = 'mermaid' | 'rough' | 'none';
+
+export interface VisualContent {
+  type: VisualContentType;
+  code: string;
+  title?: string;
+}
+
 export interface Conversation {
   id: string;
   user_id: string;
@@ -27,6 +36,9 @@ export interface Message {
   created_at: Date;
   model?: 'google' | 'zhipu' | 'mistral-small' | 'mistral-codestral';
   isEditing?: boolean;
+  // NEW: Visual content support
+  visualContent?: VisualContent;
+  isVisualResponse?: boolean;
 }
 
 export interface Note {
