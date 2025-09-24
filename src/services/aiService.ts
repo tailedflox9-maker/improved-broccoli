@@ -1,4 +1,4 @@
-import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz } from '../types';
+import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz, VisualContent } from '../types';
 import { generateId } from '../utils/helpers';
 import { supabase } from '../supabase';
 import * as db from './supabaseService';
@@ -48,6 +48,64 @@ KEEP RESPONSES:
 - Encouraging and supportive
 - Appropriately detailed for the question asked
 Remember: You're having a natural conversation about learning, not filling out a worksheet. Adapt your response style to what the student actually needs, whether that's a quick clarification, detailed explanation, or guided practice.`;
+
+const visualSystemPrompt = `You are an enthusiastic AI tutor specializing in creating visual explanations. When a student requests a visual answer, you provide both a clear explanation AND a visual diagram to help them understand the concept better.
+
+VISUAL RESPONSE FORMAT:
+1. Start with a brief, engaging explanation of the concept
+2. Generate appropriate diagram code based on the topic
+3. Provide additional context or explanations as needed
+
+DIAGRAM SELECTION CRITERIA:
+- **Flowcharts** (Mermaid): For processes, decision trees, algorithms, step-by-step procedures
+- **Concept Maps** (Mermaid): For showing relationships between ideas, mind maps, hierarchies
+- **Hand-drawn Style** (Rough): For simple explanations, casual diagrams, brainstorming visuals
+
+MERMAID DIAGRAM TYPES TO USE:
+- \`graph TD\` or \`graph LR\` for flowcharts and process diagrams
+- \`mindmap\` for concept maps and hierarchical relationships
+- \`flowchart TD\` for decision processes
+- \`classDiagram\` for showing relationships between concepts
+- Keep diagrams simple and educational
+
+ROUGH DIAGRAM FORMAT (JSON):
+For hand-drawn style, use this JSON structure:
+\`\`\`json
+{
+  "type": "concept-map",
+  "title": "Main Topic",
+  "concepts": [
+    {"label": "Concept 1"},
+    {"label": "Concept 2"}
+  ]
+}
+\`\`\`
+
+OR for flowcharts:
+\`\`\`json
+{
+  "type": "flowchart",
+  "nodes": [
+    {"label": "Start"},
+    {"label": "Process"},
+    {"label": "End"}
+  ],
+  "connections": [
+    {"from": 0, "to": 1},
+    {"from": 1, "to": 2}
+  ]
+}
+\`\`\`
+
+IMPORTANT RULES:
+- Always provide both text explanation AND visual content
+- Choose the most appropriate visual type for the concept
+- Keep diagrams educational and focused
+- Use clear, simple labels
+- Make sure diagram code is syntactically correct
+- Explain how the visual helps understand the concept
+
+Your goal is to make learning visual and engaging while maintaining educational value.`;
 
 async function* streamOpenAICompatResponse(
   url: string,
@@ -165,6 +223,102 @@ class AiService {
         break;
       default:
         throw new Error('Invalid model selected.');
+    }
+  }
+
+  public async generateVisualResponse(
+    messages: { role: string; content: string }[],
+    userId?: string
+  ): Promise<{ content: string; visualContent?: VisualContent }> {
+    if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
+    
+    const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
+    const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
+    
+    // Create enhanced prompt for visual response
+    const visualPrompt = `The student asked: "${lastUserMessage}"
+
+Please provide a visual explanation with both text and a diagram. Based on the question, determine if this should be:
+- A flowchart (for processes, steps, algorithms)
+- A concept map (for relationships, hierarchies, mind maps)
+- A simple hand-drawn style diagram (for basic explanations)
+
+Provide your response in this exact format:
+
+EXPLANATION:
+[Your clear, engaging explanation here]
+
+VISUAL_TYPE: [mermaid_flowchart|mermaid_concept|rough_diagram]
+
+VISUAL_CODE:
+[Your diagram code here - either Mermaid syntax or JSON for rough diagrams]
+
+VISUAL_TITLE: [Short title for the diagram]
+
+Make sure the visual directly supports your explanation and helps the student understand the concept better.`;
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: visualPrompt }] }],
+        systemInstruction: { parts: [{ text: visualSystemPrompt }] }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!textResponse) {
+      throw new Error('Invalid response from API when generating visual content.');
+    }
+
+    // Parse the structured response
+    const result = this.parseVisualResponse(textResponse);
+    return result;
+  }
+
+  private parseVisualResponse(response: string): { content: string; visualContent?: VisualContent } {
+    try {
+      const explanationMatch = response.match(/EXPLANATION:\s*([\s\S]*?)(?=VISUAL_TYPE:|$)/);
+      const typeMatch = response.match(/VISUAL_TYPE:\s*([\s\S]*?)(?=VISUAL_CODE:|$)/);
+      const codeMatch = response.match(/VISUAL_CODE:\s*([\s\S]*?)(?=VISUAL_TITLE:|$)/);
+      const titleMatch = response.match(/VISUAL_TITLE:\s*([\s\S]*?)(?=\n|$)/);
+
+      const explanation = explanationMatch?.[1]?.trim() || response;
+      const visualType = typeMatch?.[1]?.trim() || '';
+      const visualCode = codeMatch?.[1]?.trim()?.replace(/```(mermaid|json)?/g, '') || '';
+      const visualTitle = titleMatch?.[1]?.trim() || '';
+
+      let visualContent: VisualContent | undefined = undefined;
+
+      if (visualType && visualCode) {
+        let mappedType: 'mermaid' | 'rough' | 'none' = 'none';
+        if (visualType.startsWith('mermaid')) {
+          mappedType = 'mermaid';
+        } else if (visualType.startsWith('rough')) {
+          mappedType = 'rough';
+        }
+
+        if (mappedType !== 'none') {
+          visualContent = {
+            type: mappedType,
+            code: visualCode,
+            title: visualTitle,
+          };
+        }
+      }
+
+      return { content: explanation, visualContent };
+    } catch(e) {
+      console.error("Error parsing visual response:", e);
+      // Fallback to returning the whole response as text content
+      return { content: response };
     }
   }
 
