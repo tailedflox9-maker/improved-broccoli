@@ -266,6 +266,13 @@ export function MessageBubble({
   const [flagged, setFlagged] = useState(false);
   const [isNoteSaving, setIsNoteSaving] = useState(false);
   const copyTimeoutRef = useRef<NodeJS.Timeout>();
+  const wasStreaming = useRef(isStreaming);
+
+  useEffect(() => {
+    if (isStreaming) {
+      wasStreaming.current = true;
+    }
+  }, [isStreaming]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -473,7 +480,7 @@ export function MessageBubble({
     <div 
       className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group transition-all duration-200 ${
         isHighlighted ? 'bg-yellow-400/10 rounded-lg p-3 -m-3 shadow-lg ring-1 ring-yellow-400/20' : ''
-      } ${isStreaming ? 'is-streaming' : ''}`}
+      } ${isStreaming ? 'is-streaming' : ''} ${wasStreaming.current ? 'was-streaming' : ''}`}
       id={`message-${message.id}`}
     >
       {!isUser && (
