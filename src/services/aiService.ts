@@ -1,4 +1,4 @@
-import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz, VisualContent } from '../types';
+import { APISettings, Conversation, StudySession, QuizQuestion, GeneratedQuiz } from '../types';
 import { generateId } from '../utils/helpers';
 import { supabase } from '../supabase';
 import * as db from './supabaseService';
@@ -48,54 +48,6 @@ KEEP RESPONSES:
 - Encouraging and supportive
 - Appropriately detailed for the question asked
 Remember: You're having a natural conversation about learning, not filling out a worksheet. Adapt your response style to what the student actually needs, whether that's a quick clarification, detailed explanation, or guided practice.`;
-
-// UPDATED: More robust visual prompt to prevent syntax errors
-const visualSystemPrompt = `You are an enthusiastic AI tutor specializing in creating visual explanations. When a student requests a visual answer, you provide both a clear explanation AND a visual diagram.
-
-VISUAL RESPONSE FORMAT:
-1. Start with a brief, engaging explanation of the concept.
-2. Generate the appropriate diagram code.
-3. Explain how the diagram helps understand the concept.
-
-DIAGRAM SELECTION CRITERIA:
-- **Flowcharts/Processes** (Mermaid): Use \`graph TD\` or \`flowchart TD\`.
-- **Concept Maps/Relationships** (Mermaid): Use \`mindmap\` or \`graph LR\`.
-- **Hand-drawn Style** (Rough): For simple sketches (use the JSON format).
-
-*** MERMAID SYNTAX - CRITICAL RULES ***
-To avoid parsing errors, you MUST follow these rules:
-
-1.  **ALWAYS wrap node text in quotes or brackets:**
-    - GOOD:  \`A["Start Here"]\` (Rectangle/Process)
-    - GOOD:  \`B{"Is it ready?"}\` (Diamond/Decision)
-    - GOOD:  \`C("End Process")\` (Rounded rectangle)
-    - BAD:   \`A[Start Here]\`
-    - BAD:   \`B{Is it ready?}\` (<- This fails if text has commas or parentheses!)
-
-2.  **Keep labels concise.**
-
-3.  **For Mindmaps:**
-    \`\`\`mermaid
-    mindmap
-      root((Main Topic))
-        Sub Topic 1
-          Detail A
-        Sub Topic 2
-    \`\`\`
-
-ROUGH DIAGRAM FORMAT (JSON):
-\`\`\`json
-{
-  "type": "concept-map",
-  "title": "Main Topic",
-  "concepts": [
-    {"label": "Concept 1"},
-    {"label": "Concept 2"}
-  ]
-}
-\`\`\`
-
-Your goal is to make learning visual and engaging while maintaining educational value.`;
 
 async function* streamOpenAICompatResponse(
   url: string,
@@ -213,97 +165,6 @@ class AiService {
         break;
       default:
         throw new Error('Invalid model selected.');
-    }
-  }
-
-  public async generateVisualResponse(
-    messages: { role: string; content: string }[],
-    userId?: string
-  ): Promise<{ content: string; visualContent?: VisualContent }> {
-    if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-    
-    const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
-    const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
-    
-    // Create enhanced prompt for visual response
-    const visualPrompt = `The student asked: "${lastUserMessage}"
-
-Please provide a visual explanation. Determine if a flowchart, concept map, or rough diagram is best.
-
-Provide your response in this exact format:
-
-EXPLANATION:
-[Your clear, engaging explanation here]
-
-VISUAL_TYPE: [mermaid_flowchart|mermaid_concept|rough_diagram]
-
-VISUAL_CODE:
-[Your diagram code here. If Mermaid, use quotes for labels like A["Label"]. If Rough, use JSON.]
-
-VISUAL_TITLE: [Short title]`;
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: visualPrompt }] }],
-        systemInstruction: { parts: [{ text: visualSystemPrompt }] }
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (!textResponse) {
-      throw new Error('Invalid response from API when generating visual content.');
-    }
-
-    // Parse the structured response
-    const result = this.parseVisualResponse(textResponse);
-    return result;
-  }
-
-  private parseVisualResponse(response: string): { content: string; visualContent?: VisualContent } {
-    try {
-      const explanationMatch = response.match(/EXPLANATION:\s*([\s\S]*?)(?=VISUAL_TYPE:|$)/);
-      const typeMatch = response.match(/VISUAL_TYPE:\s*([\s\S]*?)(?=VISUAL_CODE:|$)/);
-      const codeMatch = response.match(/VISUAL_CODE:\s*([\s\S]*?)(?=VISUAL_TITLE:|$)/);
-      const titleMatch = response.match(/VISUAL_TITLE:\s*([\s\S]*?)(?=\n|$)/);
-
-      const explanation = explanationMatch?.[1]?.trim() || response;
-      const visualType = typeMatch?.[1]?.trim() || '';
-      const visualCode = codeMatch?.[1]?.trim()?.replace(/```(mermaid|json)?/g, '') || '';
-      const visualTitle = titleMatch?.[1]?.trim() || '';
-
-      let visualContent: VisualContent | undefined = undefined;
-
-      if (visualType && visualCode) {
-        let mappedType: 'mermaid' | 'rough' | 'none' = 'none';
-        if (visualType.startsWith('mermaid')) {
-          mappedType = 'mermaid';
-        } else if (visualType.startsWith('rough')) {
-          mappedType = 'rough';
-        }
-
-        if (mappedType !== 'none') {
-          visualContent = {
-            type: mappedType,
-            code: visualCode,
-            title: visualTitle,
-          };
-        }
-      }
-
-      return { content: explanation, visualContent };
-    } catch(e) {
-      console.error("Error parsing visual response:", e);
-      // Fallback to returning the whole response as text content
-      return { content: response };
     }
   }
 
