@@ -200,7 +200,7 @@ export function Sidebar({
               <div 
                 key={c.id} 
                 onClick={() => onSelectConversation(c.id)} 
-                className={`group flex items-center gap-2 ${isFolded ? 'justify-center p-2' : 'p-2.5'} rounded-lg cursor-pointer ${currentConversationId === c.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`} 
+                className={`group flex items-center gap-2 ${isFolded ? 'justify-center p-2' : 'p-2.5'} rounded-lg cursor-pointer transition-colors ${currentConversationId === c.id ? 'bg-white/10 text-white border border-white/20' : 'hover:bg-[var(--color-card)]'}`} 
                 title={isFolded ? c.title : undefined}
               >
                 <MessageSquare className="w-4 h-4 shrink-0" />
@@ -243,7 +243,7 @@ export function Sidebar({
               <div 
                 key={n.id} 
                 onClick={() => onSelectNote(n.id)} 
-                className={`group p-2.5 rounded-lg cursor-pointer ${currentNoteId === n.id ? 'bg-blue-600 text-white' : 'hover:bg-[var(--color-card)]'}`}
+                className={`group p-2.5 rounded-lg cursor-pointer transition-colors ${currentNoteId === n.id ? 'bg-white/10 text-white border border-white/20' : 'hover:bg-[var(--color-card)]'}`}
               >
                 <div className="flex justify-between items-start">
                   <span className="text-sm font-semibold truncate pr-2">{n.title}</span>
@@ -262,7 +262,7 @@ export function Sidebar({
               <div
                 key={q.id}
                 onClick={() => onSelectAssignedQuiz(q)}
-                className="group p-3 rounded-lg cursor-pointer hover:bg-[var(--color-card)]"
+                className="group p-3 rounded-lg cursor-pointer hover:bg-[var(--color-card)] transition-colors"
               >
                 <div className="flex justify-between items-start">
                   <span className="text-sm font-semibold truncate pr-2">{q.generated_quizzes.topic}</span>
