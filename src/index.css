@@ -155,8 +155,6 @@
     word-wrap: break-word; 
     overflow-wrap: break-word;
     font-weight: 500;
-    /* Prevent layout shifts during streaming */
-    min-height: 2rem;
   }
   @media (max-width: 768px) { .message-bubble { max-width: 95%; } }
   .message-bubble:hover { transform: translateY(-1px) translateZ(0); }
