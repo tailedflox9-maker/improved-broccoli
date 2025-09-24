@@ -5,7 +5,7 @@ import { Conversation, Message } from '../types';
 
 interface ChatAreaProps {
   conversation: Conversation | undefined;
-  onSendMessage: (message: string, isVisualRequest?: boolean) => void;
+  onSendMessage: (message: string) => void;
   isLoading: boolean;
   isQuizLoading: boolean;
   streamingMessage?: Message | null;
@@ -112,9 +112,6 @@ export function ChatArea({
             <p className="text-sm sm:text-base text-[var(--color-text-secondary)] opacity-80">
               Start a conversation to begin learning
             </p>
-            <div className="mt-4 text-xs text-[var(--color-text-secondary)] opacity-60">
-              💡 Try the visual answer button for diagrams and concept maps
-            </div>
           </div>
         </div>
         <div className="chat-input-container">
