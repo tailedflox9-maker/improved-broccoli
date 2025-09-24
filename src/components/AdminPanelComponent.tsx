@@ -81,8 +81,10 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     setProfilesLoading(true);
     try {
       const profiles = await db.getAllStudentProfiles();
+      console.log('Fetched student profiles:', profiles);
       setStudentProfiles(profiles);
     } catch (error: any) {
+      console.error('Error fetching student profiles:', error);
       setError(`Failed to load student profiles: ${error.message}`);
     } finally {
       setProfilesLoading(false);
@@ -405,201 +407,209 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                     </form>
                 </div>
             </div>
-            <div className="lg:col-span-2 admin-card">
-                <h3 className="card-header"><Users size={18}/> User Management</h3>
-                <div className="p-4 border-b border-[var(--color-border)] flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                      <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-style pl-10" />
+            <div className="lg:col-span-2 space-y-8">
+                {/* Student Profiles Section */}
+                <div className="admin-card">
+                  <div className="card-header flex justify-between items-center">
+                    <h3 className="flex items-center gap-3">
+                      <UserCog size={18}/> Student Profiles Management
+                    </h3>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          setShowStudentProfiles(!showStudentProfiles);
+                          if (!showStudentProfiles && studentProfiles.length === 0) {
+                            fetchStudentProfiles();
+                          }
+                        }}
+                        className="btn-secondary"
+                      >
+                        {showStudentProfiles ? 'Hide Profiles' : 'View All Student Profiles'}
+                      </button>
+                      {showStudentProfiles && (
+                        <button 
+                          onClick={fetchStudentProfiles} 
+                          disabled={profilesLoading} 
+                          className="btn-secondary"
+                        >
+                          <RefreshCw size={14} className={profilesLoading ? 'animate-spin' : ''} /> 
+                          Refresh
+                        </button>
+                      )}
                     </div>
-                    <div className="relative">
-                      <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="input-style pr-8">
-                        <option value="all">All Roles</option><option value="admin">Admin</option><option value="teacher">Teacher</option><option value="student">Student</option>
-                      </select>
-                      <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                  </div>
+                  
+                  {showStudentProfiles && (
+                    <div className="p-4">
+                      {profilesLoading && (
+                        <div className="text-center p-12">
+                          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" />
+                          <p className="text-gray-400 mt-2">Loading student profiles...</p>
+                        </div>
+                      )}
+                      
+                      {!profilesLoading && studentProfiles.length === 0 && (
+                        <div className="text-center p-12">
+                          <UserCog size={48} className="mx-auto text-gray-600 mb-4" />
+                          <h3 className="text-xl font-semibold text-white mb-2">No Student Profiles</h3>
+                          <p className="text-gray-400">
+                            Teachers haven't created any student profiles yet.
+                          </p>
+                        </div>
+                      )}
+                      
+                      {!profilesLoading && studentProfiles.length > 0 && (
+                        <>
+                          <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                            <p className="text-blue-300 text-sm">
+                              <strong>Total Profiles:</strong> {studentProfiles.length} students have personalized learning profiles
+                            </p>
+                          </div>
+                          
+                          <div className="grid gap-4 max-h-96 overflow-y-auto">
+                            {studentProfiles.map((profile) => (
+                              <div 
+                                key={profile.id} 
+                                className="bg-gray-900/50 border border-white/10 rounded-xl p-4"
+                              >
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-blue-900/40 rounded-full flex items-center justify-center border border-blue-500/30">
+                                      <UserCog className="w-5 h-5 text-blue-400" />
+                                    </div>
+                                    <div>
+                                      <h4 className="text-white font-semibold">{profile.student_name}</h4>
+                                      <p className="text-gray-400 text-sm">
+                                        Student: {profile.profiles?.full_name || profile.profiles?.email || 'Unknown User'}
+                                      </p>
+                                      {(profile.age || profile.grade_level) && (
+                                        <p className="text-gray-500 text-xs">
+                                          {[profile.age ? `Age ${profile.age}` : '', profile.grade_level].filter(Boolean).join(' • ')}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Updated: {new Date(profile.updated_at).toLocaleDateString()}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                  {profile.learning_strengths && (
+                                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-2">
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <Lightbulb className="w-3 h-3 text-green-400" />
+                                        <span className="font-semibold text-green-300">Strengths</span>
+                                      </div>
+                                      <p className="text-gray-300 line-clamp-2">{profile.learning_strengths}</p>
+                                    </div>
+                                  )}
+
+                                  {profile.learning_challenges && (
+                                    <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-2">
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <AlertTriangle className="w-3 h-3 text-yellow-400" />
+                                        <span className="font-semibold text-yellow-300">Challenges</span>
+                                      </div>
+                                      <p className="text-gray-300 line-clamp-2">{profile.learning_challenges}</p>
+                                    </div>
+                                  )}
+
+                                  {profile.learning_style && (
+                                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-2">
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <Brain className="w-3 h-3 text-purple-400" />
+                                        <span className="font-semibold text-purple-300">Style</span>
+                                      </div>
+                                      <p className="text-gray-300 line-clamp-2">{profile.learning_style}</p>
+                                    </div>
+                                  )}
+
+                                  {profile.interests && (
+                                    <div className="bg-pink-900/20 border border-pink-500/30 rounded-lg p-2">
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <Heart className="w-3 h-3 text-pink-400" />
+                                        <span className="font-semibold text-pink-300">Interests</span>
+                                      </div>
+                                      <p className="text-gray-300 line-clamp-2">{profile.interests}</p>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {profile.custom_context && (
+                                  <div className="mt-3 bg-gray-800/50 border border-gray-600/30 rounded-lg p-2">
+                                    <div className="flex items-center gap-1 mb-1">
+                                      <BookOpen className="w-3 h-3 text-gray-400" />
+                                      <span className="font-semibold text-gray-300 text-xs">Additional Context</span>
+                                    </div>
+                                    <p className="text-gray-300 text-xs line-clamp-3">{profile.custom_context}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
+                  )}
                 </div>
-                {loading && (<div className="text-center p-12"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" /><p className="text-gray-400 mt-2">Loading users...</p></div>)}
-                {error && (<div className="text-center p-12"><AlertTriangle className="w-8 h-8 mx-auto text-red-500" /><p className="text-red-400 font-semibold mt-2">Error</p><p className="text-gray-400 text-sm">{error}</p><button onClick={fetchUsers} className="mt-4 btn-secondary"><RefreshCw size={14} /> Retry</button></div>)}
-                {!loading && !error && (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="text-gray-400">
-                              <tr className="border-b border-[var(--color-border)]">
-                                <th className="table-header">User</th><th className="table-header">Role</th><th className="table-header">Assigned Teacher</th><th className="table-header">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[var(--color-border)]">
-                                {filteredUsers.map(user => {
-                                    const roleUI = getRoleUI(user.role);
-                                    const assignedTeacher = user.teacher_id ? teachers.find(t => t.id === user.teacher_id) : null;
-                                    return (
-                                        <tr key={user.id} className="hover:bg-white/5">
-                                            <td className="p-4">
-                                              <div className="flex items-center gap-3">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${roleUI.class}`}>{roleUI.icon}</div>
-                                                <div><p className="font-semibold text-white">{user.full_name || 'No Name'}</p><p className="text-gray-400">{user.email}</p></div>
-                                              </div>
-                                            </td>
-                                            <td className="p-4">
-                                              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${roleUI.class}`}>{roleUI.icon}<span>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</span></div>
-                                            </td>
-                                            <td className="p-4 text-gray-300">
-                                              {user.role === 'student' ? (assignedTeacher ? (<span className="text-green-400">{assignedTeacher.full_name || assignedTeacher.email}</span>) : (<span className="text-yellow-400 italic">Unassigned</span>)) : (<span className="text-gray-500">—</span>)}
-                                            </td>
-                                            <td className="p-4">
-                                              <button onClick={() => handleViewChats(user)} className="btn-secondary"><Eye size={14}/> View Chats</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                        {filteredUsers.length === 0 && (<div className="text-center p-12 text-gray-500">No users match your criteria.</div>)}
+
+                <div className="admin-card">
+                    <h3 className="card-header"><Users size={18}/> User Management</h3>
+                    <div className="p-4 border-b border-[var(--color-border)] flex flex-col md:flex-row gap-4">
+                        <div className="relative flex-1">
+                          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                          <input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input-style pl-10" />
+                        </div>
+                        <div className="relative">
+                          <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="input-style pr-8">
+                            <option value="all">All Roles</option><option value="admin">Admin</option><option value="teacher">Teacher</option><option value="student">Student</option>
+                          </select>
+                          <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                        </div>
                     </div>
-                )}
+                    {loading && (<div className="text-center p-12"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" /><p className="text-gray-400 mt-2">Loading users...</p></div>)}
+                    {error && (<div className="text-center p-12"><AlertTriangle className="w-8 h-8 mx-auto text-red-500" /><p className="text-red-400 font-semibold mt-2">Error</p><p className="text-gray-400 text-sm">{error}</p><button onClick={fetchUsers} className="mt-4 btn-secondary"><RefreshCw size={14} /> Retry</button></div>)}
+                    {!loading && !error && (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="text-gray-400">
+                                  <tr className="border-b border-[var(--color-border)]">
+                                    <th className="table-header">User</th><th className="table-header">Role</th><th className="table-header">Assigned Teacher</th><th className="table-header">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--color-border)]">
+                                    {filteredUsers.map(user => {
+                                        const roleUI = getRoleUI(user.role);
+                                        const assignedTeacher = user.teacher_id ? teachers.find(t => t.id === user.teacher_id) : null;
+                                        return (
+                                            <tr key={user.id} className="hover:bg-white/5">
+                                                <td className="p-4">
+                                                  <div className="flex items-center gap-3">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${roleUI.class}`}>{roleUI.icon}</div>
+                                                    <div><p className="font-semibold text-white">{user.full_name || 'No Name'}</p><p className="text-gray-400">{user.email}</p></div>
+                                                  </div>
+                                                </td>
+                                                <td className="p-4">
+                                                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${roleUI.class}`}>{roleUI.icon}<span>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</span></div>
+                                                </td>
+                                                <td className="p-4 text-gray-300">
+                                                  {user.role === 'student' ? (assignedTeacher ? (<span className="text-green-400">{assignedTeacher.full_name || assignedTeacher.email}</span>) : (<span className="text-yellow-400 italic">Unassigned</span>)) : (<span className="text-gray-500">—</span>)}
+                                                </td>
+                                                <td className="p-4">
+                                                  <button onClick={() => handleViewChats(user)} className="btn-secondary"><Eye size={14}/> View Chats</button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            {filteredUsers.length === 0 && (<div className="text-center p-12 text-gray-500">No users match your criteria.</div>)}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
-
-        <div className="admin-card">
-            <div className="card-header flex justify-between items-center">
-                <h3 className="flex items-center gap-3">
-                <UserCog size={18}/> Student Profiles Management
-                </h3>
-                <div className="flex gap-2">
-                <button
-                    onClick={() => {
-                    setShowStudentProfiles(!showStudentProfiles);
-                    if (!showStudentProfiles && studentProfiles.length === 0) {
-                        fetchStudentProfiles();
-                    }
-                    }}
-                    className="btn-secondary"
-                >
-                    {showStudentProfiles ? 'Hide Profiles' : 'View All Student Profiles'}
-                </button>
-                {showStudentProfiles && (
-                    <button
-                    onClick={fetchStudentProfiles}
-                    disabled={profilesLoading}
-                    className="btn-secondary"
-                    >
-                    <RefreshCw size={14} className={profilesLoading ? 'animate-spin' : ''} />
-                    Refresh
-                    </button>
-                )}
-                </div>
-            </div>
-
-            {showStudentProfiles && (
-                <div className="p-4">
-                {profilesLoading && (
-                    <div className="text-center p-12">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" />
-                    <p className="text-gray-400 mt-2">Loading student profiles...</p>
-                    </div>
-                )}
-
-                {!profilesLoading && studentProfiles.length === 0 && (
-                    <div className="text-center p-12">
-                    <UserCog size={48} className="mx-auto text-gray-600 mb-4" />
-                    <h3 className="text-xl font-semibold text-white mb-2">No Student Profiles</h3>
-                    <p className="text-gray-400">
-                        Teachers haven't created any student profiles yet.
-                    </p>
-                    </div>
-                )}
-
-                {!profilesLoading && studentProfiles.length > 0 && (
-                    <>
-                    <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
-                        <p className="text-blue-300 text-sm">
-                        <strong>Total Profiles:</strong> {studentProfiles.length} students have personalized learning profiles
-                        </p>
-                    </div>
-
-                    <div className="grid gap-4 max-h-96 overflow-y-auto">
-                        {studentProfiles.map((profile) => (
-                        <div
-                            key={profile.id}
-                            className="bg-gray-900/50 border border-white/10 rounded-xl p-4"
-                        >
-                            <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-900/40 rounded-full flex items-center justify-center border border-blue-500/30">
-                                <UserCog className="w-5 h-5 text-blue-400" />
-                                </div>
-                                <div>
-                                <h4 className="text-white font-semibold">{profile.student_name}</h4>
-                                <p className="text-gray-400 text-sm">
-                                    Student: {profile.profiles.full_name || profile.profiles.email}
-                                </p>
-                                {(profile.age || profile.grade_level) && (
-                                    <p className="text-gray-500 text-xs">
-                                    {[profile.age ? `Age ${profile.age}` : '', profile.grade_level].filter(Boolean).join(' • ')}
-                                    </p>
-                                )}
-                                </div>
-                            </div>
-                            <div className="text-xs text-gray-500">
-                                Updated: {new Date(profile.updated_at).toLocaleDateString()}
-                            </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                            {profile.learning_strengths && (
-                                <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-2">
-                                <div className="flex items-center gap-1 mb-1">
-                                    <Lightbulb className="w-3 h-3 text-green-400" />
-                                    <span className="font-semibold text-green-300">Strengths</span>
-                                </div>
-                                <p className="text-gray-300 line-clamp-2">{profile.learning_strengths}</p>
-                                </div>
-                            )}
-                            {profile.learning_challenges && (
-                                <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-2">
-                                <div className="flex items-center gap-1 mb-1">
-                                    <AlertTriangle className="w-3 h-3 text-yellow-400" />
-                                    <span className="font-semibold text-yellow-300">Challenges</span>
-                                </div>
-                                <p className="text-gray-300 line-clamp-2">{profile.learning_challenges}</p>
-                                </div>
-                            )}
-                            {profile.learning_style && (
-                                <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-2">
-                                <div className="flex items-center gap-1 mb-1">
-                                    <Brain className="w-3 h-3 text-purple-400" />
-                                    <span className="font-semibold text-purple-300">Style</span>
-                                </div>
-                                <p className="text-gray-300 line-clamp-2">{profile.learning_style}</p>
-                                </div>
-                            )}
-                            {profile.interests && (
-                                <div className="bg-pink-900/20 border border-pink-500/30 rounded-lg p-2">
-                                <div className="flex items-center gap-1 mb-1">
-                                    <Heart className="w-3 h-3 text-pink-400" />
-                                    <span className="font-semibold text-pink-300">Interests</span>
-                                </div>
-                                <p className="text-gray-300 line-clamp-2">{profile.interests}</p>
-                                </div>
-                            )}
-                            </div>
-                            {profile.custom_context && (
-                            <div className="mt-3 bg-gray-800/50 border border-gray-600/30 rounded-lg p-2">
-                                <div className="flex items-center gap-1 mb-1">
-                                <BookOpen className="w-3 h-3 text-gray-400" />
-                                <span className="font-semibold text-gray-300 text-xs">Additional Context</span>
-                                </div>
-                                <p className="text-gray-300 text-xs line-clamp-3">{profile.custom_context}</p>
-                            </div>
-                            )}
-                        </div>
-                        ))}
-                    </div>
-                    </>
-                )}
-                </div>
-            )}
-            </div>
       </div>
     </div>
   );
