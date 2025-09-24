@@ -49,27 +49,41 @@ KEEP RESPONSES:
 - Appropriately detailed for the question asked
 Remember: You're having a natural conversation about learning, not filling out a worksheet. Adapt your response style to what the student actually needs, whether that's a quick clarification, detailed explanation, or guided practice.`;
 
-const visualSystemPrompt = `You are an enthusiastic AI tutor specializing in creating visual explanations. When a student requests a visual answer, you provide both a clear explanation AND a visual diagram to help them understand the concept better.
+// UPDATED: More robust visual prompt to prevent syntax errors
+const visualSystemPrompt = `You are an enthusiastic AI tutor specializing in creating visual explanations. When a student requests a visual answer, you provide both a clear explanation AND a visual diagram.
 
 VISUAL RESPONSE FORMAT:
-1. Start with a brief, engaging explanation of the concept
-2. Generate appropriate diagram code based on the topic
-3. Provide additional context or explanations as needed
+1. Start with a brief, engaging explanation of the concept.
+2. Generate the appropriate diagram code.
+3. Explain how the diagram helps understand the concept.
 
 DIAGRAM SELECTION CRITERIA:
-- **Flowcharts** (Mermaid): For processes, decision trees, algorithms, step-by-step procedures
-- **Concept Maps** (Mermaid): For showing relationships between ideas, mind maps, hierarchies
-- **Hand-drawn Style** (Rough): For simple explanations, casual diagrams, brainstorming visuals
+- **Flowcharts/Processes** (Mermaid): Use \`graph TD\` or \`flowchart TD\`.
+- **Concept Maps/Relationships** (Mermaid): Use \`mindmap\` or \`graph LR\`.
+- **Hand-drawn Style** (Rough): For simple sketches (use the JSON format).
 
-MERMAID DIAGRAM TYPES TO USE:
-- \`graph TD\` or \`graph LR\` for flowcharts and process diagrams
-- \`mindmap\` for concept maps and hierarchical relationships
-- \`flowchart TD\` for decision processes
-- \`classDiagram\` for showing relationships between concepts
-- Keep diagrams simple and educational
+*** MERMAID SYNTAX - CRITICAL RULES ***
+To avoid parsing errors, you MUST follow these rules:
+
+1.  **ALWAYS wrap node text in quotes or brackets:**
+    - GOOD:  \`A["Start Here"]\` (Rectangle/Process)
+    - GOOD:  \`B{"Is it ready?"}\` (Diamond/Decision)
+    - GOOD:  \`C("End Process")\` (Rounded rectangle)
+    - BAD:   \`A[Start Here]\`
+    - BAD:   \`B{Is it ready?}\` (<- This fails if text has commas or parentheses!)
+
+2.  **Keep labels concise.**
+
+3.  **For Mindmaps:**
+    \`\`\`mermaid
+    mindmap
+      root((Main Topic))
+        Sub Topic 1
+          Detail A
+        Sub Topic 2
+    \`\`\`
 
 ROUGH DIAGRAM FORMAT (JSON):
-For hand-drawn style, use this JSON structure:
 \`\`\`json
 {
   "type": "concept-map",
@@ -80,30 +94,6 @@ For hand-drawn style, use this JSON structure:
   ]
 }
 \`\`\`
-
-OR for flowcharts:
-\`\`\`json
-{
-  "type": "flowchart",
-  "nodes": [
-    {"label": "Start"},
-    {"label": "Process"},
-    {"label": "End"}
-  ],
-  "connections": [
-    {"from": 0, "to": 1},
-    {"from": 1, "to": 2}
-  ]
-}
-\`\`\`
-
-IMPORTANT RULES:
-- Always provide both text explanation AND visual content
-- Choose the most appropriate visual type for the concept
-- Keep diagrams educational and focused
-- Use clear, simple labels
-- Make sure diagram code is syntactically correct
-- Explain how the visual helps understand the concept
 
 Your goal is to make learning visual and engaging while maintaining educational value.`;
 
@@ -238,10 +228,7 @@ class AiService {
     // Create enhanced prompt for visual response
     const visualPrompt = `The student asked: "${lastUserMessage}"
 
-Please provide a visual explanation with both text and a diagram. Based on the question, determine if this should be:
-- A flowchart (for processes, steps, algorithms)
-- A concept map (for relationships, hierarchies, mind maps)
-- A simple hand-drawn style diagram (for basic explanations)
+Please provide a visual explanation. Determine if a flowchart, concept map, or rough diagram is best.
 
 Provide your response in this exact format:
 
@@ -251,11 +238,9 @@ EXPLANATION:
 VISUAL_TYPE: [mermaid_flowchart|mermaid_concept|rough_diagram]
 
 VISUAL_CODE:
-[Your diagram code here - either Mermaid syntax or JSON for rough diagrams]
+[Your diagram code here. If Mermaid, use quotes for labels like A["Label"]. If Rough, use JSON.]
 
-VISUAL_TITLE: [Short title for the diagram]
-
-Make sure the visual directly supports your explanation and helps the student understand the concept better.`;
+VISUAL_TITLE: [Short title]`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
