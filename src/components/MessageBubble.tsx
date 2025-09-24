@@ -7,6 +7,7 @@ import { Smile, Sparkles, Copy, Check, Bookmark, Download, Flag } from 'lucide-r
 import { Message } from '../types';
 import { flagMessage } from '../services/supabaseService';
 import { useAuth } from '../hooks/useAuth';
+import { VisualContentRenderer } from './VisualContentRenderer';
 
 interface MessageBubbleProps {
   message: Message;
@@ -161,50 +162,69 @@ export function MessageBubble({
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] p-3 sm:p-4 rounded-xl">
-        <div className="prose prose-invert prose-base max-w-none leading-relaxed">
-          {searchTerm ? (
-            <div dangerouslySetInnerHTML={{ __html: enhancedContent }} />
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content}
-            </ReactMarkdown>
+      <div className="message-bubble-container flex-1">
+        <div className="message-bubble relative bg-[var(--color-card)] p-3 sm:p-4 rounded-xl">
+          {/* Visual content - render first if it's a visual response */}
+          {message.visualContent && message.isVisualResponse && (
+            <VisualContentRenderer 
+              visualContent={message.visualContent} 
+              className="mb-3"
+            />
           )}
-          {isStreaming && <span className="inline-block w-2 h-2 ml-1 bg-white rounded-full animate-pulse" />}
-        </div>
-        
-        {!isStreaming && message.content.length > 0 && (
-          <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <div className="flex gap-1 p-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-sm">
-              {!isUser && (
-                <button 
-                  onClick={handleSaveNote} 
-                  disabled={isNoteSaving}
-                  className={`btn-icon ${noteSaved ? 'text-blue-400' : ''} ${isNoteSaving ? 'opacity-50' : ''}`} 
-                  title={isNoteSaving ? 'Saving...' : 'Save as Note'}
-                >
-                  <Bookmark size={14} />
-                </button>
-              )}
-              <button onClick={handleCopy} className="btn-icon" title="Copy">
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </button>
-              {!isUser && (
-                <button onClick={handleExport} className="btn-icon" title="Export as Markdown">
-                  <Download size={14} />
-                </button>
-              )}
-              <button 
-                onClick={handleFlag} 
-                disabled={flagged} 
-                className={`btn-icon ${flagged ? 'text-yellow-400 cursor-not-allowed' : ''}`} 
-                title={flagged ? 'Flagged' : 'Flag for review'}
-              >
-                <Flag size={14} />
-              </button>
-            </div>
+
+          {/* Text content */}
+          <div className="prose prose-invert prose-base max-w-none leading-relaxed">
+            {searchTerm ? (
+              <div dangerouslySetInnerHTML={{ __html: enhancedContent }} />
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {message.content}
+              </ReactMarkdown>
+            )}
+            {isStreaming && <span className="inline-block w-2 h-2 ml-1 bg-white rounded-full animate-pulse" />}
           </div>
-        )}
+
+          {/* Visual content - render after text if it's not the primary visual response */}
+          {message.visualContent && !message.isVisualResponse && (
+            <VisualContentRenderer 
+              visualContent={message.visualContent} 
+              className="mt-3"
+            />
+          )}
+          
+          {!isStreaming && message.content.length > 0 && (
+            <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <div className="flex gap-1 p-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-sm">
+                {!isUser && (
+                  <button 
+                    onClick={handleSaveNote} 
+                    disabled={isNoteSaving}
+                    className={`btn-icon ${noteSaved ? 'text-blue-400' : ''} ${isNoteSaving ? 'opacity-50' : ''}`} 
+                    title={isNoteSaving ? 'Saving...' : 'Save as Note'}
+                  >
+                    <Bookmark size={14} />
+                  </button>
+                )}
+                <button onClick={handleCopy} className="btn-icon" title="Copy">
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+                {!isUser && (
+                  <button onClick={handleExport} className="btn-icon" title="Export as Markdown">
+                    <Download size={14} />
+                  </button>
+                )}
+                <button 
+                  onClick={handleFlag} 
+                  disabled={flagged} 
+                  className={`btn-icon ${flagged ? 'text-yellow-400 cursor-not-allowed' : ''}`} 
+                  title={flagged ? 'Flagged' : 'Flag for review'}
+                >
+                  <Flag size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       
       {isUser && (
