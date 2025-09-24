@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, PlusCircle, Square, ClipboardCheck, Loader2, Eye } from 'lucide-react';
+import { Send, PlusCircle, Square, ClipboardCheck, Loader2 } from 'lucide-react';
 
 interface ChatInputProps {
-  onSendMessage: (message: string, isVisualRequest?: boolean) => void;
+  onSendMessage: (message: string) => void;
   isLoading: boolean;
   isQuizLoading: boolean;
   disabled?: boolean;
@@ -24,10 +24,10 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = useCallback((e: React.FormEvent, isVisualRequest = false) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading && !disabled) {
-      onSendMessage(input.trim(), isVisualRequest);
+      onSendMessage(input.trim());
       setInput('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -71,6 +71,7 @@ export function ChatInput({
     fileInputRef.current?.click();
   };
 
+  // FIX: Handle quiz generation with proper event handling
   const handleQuizClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -79,16 +80,7 @@ export function ChatInput({
     }
   }, [canGenerateQuiz, isQuizLoading, isLoading, onGenerateQuiz]);
 
-  const handleVisualAnswerClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (input.trim() && !disabled && !isLoading) {
-      handleSubmit(e as any, true);
-    }
-  }, [input, disabled, isLoading, handleSubmit]);
-
   const canSend = input.trim() && !disabled;
-  const canSendVisual = canSend && !isLoading;
 
   return (
     <div className="chat-input">
@@ -108,7 +100,7 @@ export function ChatInput({
       )}
 
       {/* Input form */}
-      <form onSubmit={(e) => handleSubmit(e)} className="chat-input-form">
+      <form onSubmit={handleSubmit} className="chat-input-form">
         {/* File attach button */}
         <button
           type="button"
@@ -147,22 +139,7 @@ export function ChatInput({
 
         {/* Action buttons */}
         <div className="chat-input-buttons">
-          {/* Visual Answer button */}
-          <button
-            type="button"
-            onClick={handleVisualAnswerClick}
-            disabled={!canSendVisual}
-            className={`interactive-button w-9 h-9 flex items-center justify-center rounded-lg transition-all duration-200 ${
-              !canSendVisual
-                ? 'bg-transparent text-[var(--color-text-placeholder)] cursor-not-allowed opacity-50'
-                : 'bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]'
-            }`}
-            title={canSendVisual ? 'Get Visual Answer' : 'Type a question to get a visual response'}
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-
-          {/* Quiz button */}
+          {/* Quiz button - FIX: Proper button type and event handling */}
           <button
             type="button"
             onClick={handleQuizClick}
