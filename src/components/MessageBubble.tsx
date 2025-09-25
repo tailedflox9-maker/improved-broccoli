@@ -1,3 +1,5 @@
+// src/components/MessageBubble.tsx
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -49,9 +51,9 @@ const CodeBlock = React.memo(({
     codeContent;
 
   return (
-    <div className="relative my-3 text-sm rounded-lg overflow-hidden border border-gray-700">
+    <div className="relative my-3 text-sm rounded-lg overflow-hidden border border-[var(--color-border)]">
       {/* Header with language and actions */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
+      <div className="flex items-center justify-between px-3 py-2 bg-[var(--color-sidebar)] border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-300 uppercase tracking-wide">
             {language || 'text'}
@@ -99,11 +101,11 @@ const CodeBlock = React.memo(({
           style={vscDarkPlus} 
           language={language} 
           PreTag="div" 
-          className="!bg-[#1e1e1e] !m-0"
+          className="!m-0"
           customStyle={{
             padding: '0.75rem',
             margin: 0,
-            background: '#1e1e1e',
+            background: 'var(--color-bg)',
             fontSize: '0.875rem',
             lineHeight: '1.4',
           }}
@@ -119,10 +121,10 @@ const CodeBlock = React.memo(({
         </SyntaxHighlighter>
         
         {isCollapsed && shouldShowCollapse && (
-          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#1e1e1e] to-transparent flex items-end justify-center pb-1">
+          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[var(--color-bg)] to-transparent flex items-end justify-center pb-1">
             <button
               onClick={() => setIsCollapsed(false)}
-              className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+              className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-[var(--color-card)] hover:bg-[var(--color-border)]"
             >
               Show {lineCount - 10} more lines
             </button>
