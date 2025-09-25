@@ -195,8 +195,7 @@
     font-weight: 500;
   }
   .message-bubble .prose pre {
-    background: #1f2937;
-    border: 1px solid #374151;
+    border: 1px solid var(--color-border);
     border-radius: 0.5rem;
     overflow-x: auto;
     margin: 1rem 0;
