@@ -476,13 +476,13 @@ export function MessageBubble({
           {searchTerm ? (
             <div 
               dangerouslySetInnerHTML={{ __html: enhancedContent }}
-              className="leading-relaxed text-sm" 
+              className="leading-relaxed text-base" 
             />
           ) : (
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]} 
               components={markdownComponents}
-              className="leading-relaxed text-sm"
+              className="leading-relaxed text-base"
             >
               {message.content}
             </ReactMarkdown>
