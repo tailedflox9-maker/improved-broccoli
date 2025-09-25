@@ -49,9 +49,9 @@ const CodeBlock = React.memo(({
     codeContent;
 
   return (
-    <div className="relative my-4 text-sm rounded-lg overflow-hidden border border-gray-700">
+    <div className="relative my-3 text-sm rounded-lg overflow-hidden border border-gray-700">
       {/* Header with language and actions */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-300 uppercase tracking-wide">
             {language || 'text'}
@@ -101,11 +101,11 @@ const CodeBlock = React.memo(({
           PreTag="div" 
           className="!bg-[#1e1e1e] !m-0"
           customStyle={{
-            padding: '1rem',
+            padding: '0.75rem',
             margin: 0,
             background: '#1e1e1e',
             fontSize: '0.875rem',
-            lineHeight: '1.5',
+            lineHeight: '1.4',
           }}
           showLineNumbers={lineCount > 5}
           lineNumberStyle={{
@@ -119,7 +119,7 @@ const CodeBlock = React.memo(({
         </SyntaxHighlighter>
         
         {isCollapsed && shouldShowCollapse && (
-          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#1e1e1e] to-transparent flex items-end justify-center pb-2">
+          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#1e1e1e] to-transparent flex items-end justify-center pb-1">
             <button
               onClick={() => setIsCollapsed(false)}
               className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
@@ -154,7 +154,7 @@ const LinkRenderer = ({ href, children }: { href?: string; children: React.React
 
 // Optimized table component
 const TableRenderer = ({ children }: { children: React.ReactNode }) => (
-  <div className="overflow-x-auto my-4">
+  <div className="overflow-x-auto my-3">
     <table className="min-w-full divide-y divide-gray-600">
       {children}
     </table>
@@ -198,13 +198,13 @@ const MessageActions = React.memo(({
   isNoteSaving: boolean;
   isUser: boolean;
 }) => (
-  <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
-    <div className="flex gap-1 p-1.5 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-lg backdrop-blur-sm">
+  <div className="absolute -bottom-0.5 -right-0.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-0.5 group-hover:translate-y-0">
+    <div className="flex gap-1 p-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-lg backdrop-blur-sm">
       {!isUser && (
         <button 
           onClick={onSaveAsNote} 
           disabled={isNoteSaving}
-          className={`btn-icon transition-all duration-200 ${
+          className={`btn-icon transition-all duration-200 p-1 ${
             noteSaved 
               ? 'text-blue-400 scale-110' 
               : isNoteSaving 
@@ -213,40 +213,40 @@ const MessageActions = React.memo(({
           }`}
           title={isNoteSaving ? 'Saving...' : noteSaved ? 'Saved!' : 'Save as Note'}
         >
-          <Bookmark size={14} className={noteSaved ? 'fill-current' : ''} />
+          <Bookmark size={12} className={noteSaved ? 'fill-current' : ''} />
         </button>
       )}
       <button 
         onClick={onCopy} 
-        className={`btn-icon transition-all duration-200 ${
+        className={`btn-icon transition-all duration-200 p-1 ${
           copied 
             ? 'text-green-400 scale-110' 
             : 'text-gray-400 hover:text-green-400 hover:scale-110'
         }`}
         title={copied ? 'Copied!' : 'Copy message'}
       >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? <Check size={12} /> : <Copy size={12} />}
       </button>
       {!isUser && (
         <button 
           onClick={onExport} 
-          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200" 
+          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200 p-1" 
           title="Export as Markdown"
         >
-          <Download size={14} />
+          <Download size={12} />
         </button>
       )}
       <button 
         onClick={onFlag} 
         disabled={flagged} 
-        className={`btn-icon transition-all duration-200 ${
+        className={`btn-icon transition-all duration-200 p-1 ${
           flagged 
             ? 'text-yellow-400 cursor-not-allowed scale-110' 
             : 'text-gray-400 hover:text-yellow-400 hover:scale-110'
         }`}
         title={flagged ? 'Flagged for review' : 'Flag for review'}
       >
-        <Flag size={14} className={flagged ? 'fill-current' : ''} />
+        <Flag size={12} className={flagged ? 'fill-current' : ''} />
       </button>
     </div>
   </div>
@@ -266,13 +266,6 @@ export function MessageBubble({
   const [flagged, setFlagged] = useState(false);
   const [isNoteSaving, setIsNoteSaving] = useState(false);
   const copyTimeoutRef = useRef<NodeJS.Timeout>();
-  const wasStreaming = useRef(isStreaming);
-
-  useEffect(() => {
-    if (isStreaming) {
-      wasStreaming.current = true;
-    }
-  }, [isStreaming]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -301,7 +294,6 @@ export function MessageBubble({
         setTimeout(() => setNoteSaved(false), 3000);
       } catch (error) {
         console.error('Failed to save note:', error);
-        // Show a better error message
         alert('Failed to save note. Please check your connection and try again.');
       } finally {
         setIsNoteSaving(false);
@@ -350,7 +342,9 @@ export function MessageBubble({
         notification.textContent = 'Message flagged for review';
         document.body.appendChild(notification);
         setTimeout(() => {
-          document.body.removeChild(notification);
+          if (document.body.contains(notification)) {
+            document.body.removeChild(notification);
+          }
         }, 3000);
       } catch (error) {
         console.error("Error flagging message:", error);
@@ -396,19 +390,19 @@ export function MessageBubble({
     table: TableRenderer,
     
     th: ({ children }: { children: React.ReactNode }) => (
-      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
+      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
         {children}
       </th>
     ),
     
     td: ({ children }: { children: React.ReactNode }) => (
-      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-300 border-b border-gray-700">
+      <td className="px-3 py-2 text-sm text-gray-300 border-b border-gray-700">
         {children}
       </td>
     ),
     
     blockquote: ({ children }: { children: React.ReactNode }) => (
-      <blockquote className="border-l-4 border-blue-500 pl-4 py-1 my-4 bg-blue-500/5 rounded-r">
+      <blockquote className="border-l-4 border-blue-500 pl-3 py-1 my-3 bg-blue-500/5 rounded-r">
         <div className="text-gray-300 italic">
           {children}
         </div>
@@ -416,31 +410,31 @@ export function MessageBubble({
     ),
     
     h1: ({ children }: { children: React.ReactNode }) => (
-      <h1 className="text-2xl font-bold text-white mb-4 mt-6 first:mt-0 pb-2 border-b border-gray-700">
+      <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-gray-700">
         {children}
       </h1>
     ),
     
     h2: ({ children }: { children: React.ReactNode }) => (
-      <h2 className="text-xl font-semibold text-white mb-3 mt-5 first:mt-0">
+      <h2 className="text-lg font-semibold text-white mb-2 mt-4 first:mt-0">
         {children}
       </h2>
     ),
     
     h3: ({ children }: { children: React.ReactNode }) => (
-      <h3 className="text-lg font-medium text-white mb-2 mt-4 first:mt-0">
+      <h3 className="text-base font-medium text-white mb-2 mt-3 first:mt-0">
         {children}
       </h3>
     ),
     
     ul: ({ children }: { children: React.ReactNode }) => (
-      <ul className="list-disc list-inside space-y-1 my-3 ml-4 text-gray-300">
+      <ul className="list-disc list-inside space-y-0.5 my-2 ml-3 text-gray-300">
         {children}
       </ul>
     ),
     
     ol: ({ children }: { children: React.ReactNode }) => (
-      <ol className="list-decimal list-inside space-y-1 my-3 ml-4 text-gray-300">
+      <ol className="list-decimal list-inside space-y-0.5 my-2 ml-3 text-gray-300">
         {children}
       </ol>
     ),
@@ -452,7 +446,7 @@ export function MessageBubble({
     ),
     
     p: ({ children }: { children: React.ReactNode }) => (
-      <p className="text-gray-300 leading-relaxed my-3 first:mt-0 last:mb-0">
+      <p className="text-gray-300 leading-relaxed my-2 first:mt-0 last:mb-0">
         {children}
       </p>
     ),
@@ -464,50 +458,38 @@ export function MessageBubble({
     return highlightSearchTerm(message.content, searchTerm);
   }, [message.content, searchTerm]);
 
-  // Streaming indicator component
-  const StreamingIndicator = () => (
-    <div className="flex items-center gap-1 mt-2">
-      <div className="flex gap-1">
-        <div className="typing-dot" />
-        <div className="typing-dot" />
-        <div className="typing-dot" />
-      </div>
-      <span className="text-xs text-gray-500 ml-2">AI is thinking...</span>
-    </div>
-  );
-
   return (
     <div 
-      className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group transition-all duration-200 ${
-        isHighlighted ? 'bg-yellow-400/10 rounded-lg p-3 -m-3 shadow-lg ring-1 ring-yellow-400/20' : ''
-      } ${isStreaming ? 'is-streaming' : ''} ${wasStreaming.current ? 'was-streaming' : ''}`}
+      className={`message-wrapper flex gap-2 sm:gap-3 ${isUser ? 'justify-end' : 'justify-start'} group ${
+        isHighlighted ? 'bg-yellow-400/10 rounded-lg p-2 -m-2 shadow-lg ring-1 ring-yellow-400/20' : ''
+      } ${isStreaming ? 'is-streaming' : ''}`}
       id={`message-${message.id}`}
     >
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-          <Sparkles className="w-4 h-4 text-blue-400" />
+        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+          <Sparkles className="w-3.5 h-3.5 text-blue-400" />
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] p-3 sm:p-4 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="prose prose-invert prose-base max-w-none">
+      <div className="message-bubble relative bg-[var(--color-card)] px-3 py-2.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
+        <div className="prose prose-invert prose-sm max-w-none">
           {searchTerm ? (
             <div 
               dangerouslySetInnerHTML={{ __html: enhancedContent }}
-              className="leading-relaxed" 
+              className="leading-relaxed text-sm" 
             />
           ) : (
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]} 
               components={markdownComponents}
-              className="leading-relaxed"
+              className="leading-relaxed text-sm"
             >
               {message.content}
             </ReactMarkdown>
           )}
           
           {isStreaming && (
-            <StreamingIndicator />
+            <span className="streaming-cursor" />
           )}
         </div>
         
@@ -528,8 +510,8 @@ export function MessageBubble({
       </div>
       
       {isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
-          <Smile className="w-4 h-4 text-green-400" />
+        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
+          <Smile className="w-3.5 h-3.5 text-green-400" />
         </div>
       )}
     </div>
