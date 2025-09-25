@@ -1,3 +1,5 @@
+// src/components/NoteView.tsx
+
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,7 +19,7 @@ const CodeBlock = React.memo(({ language, children }: { language: string; childr
       style={vscDarkPlus}
       language={language}
       PreTag="div"
-      className="!bg-[#121212] rounded-md !p-4"
+      className="!bg-[var(--color-sidebar)] rounded-md !p-4"
     >
       {codeContent}
     </SyntaxHighlighter>
