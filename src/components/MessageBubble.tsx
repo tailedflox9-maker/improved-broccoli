@@ -489,7 +489,7 @@ export function MessageBubble({
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] p-4 sm:p-5 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
+      <div className="message-bubble relative bg-[var(--color-card)] p-3 sm:p-4 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
         <div className="prose prose-invert prose-base max-w-none">
           {searchTerm ? (
             <div 
