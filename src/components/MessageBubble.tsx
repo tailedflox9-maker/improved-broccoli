@@ -446,7 +446,7 @@ export function MessageBubble({
     ),
     
     p: ({ children }: { children: React.ReactNode }) => (
-      <p className="text-gray-300 leading-relaxed my-2 first:mt-0 last:mb-0">
+      <p className="text-gray-300 leading-relaxed my-1.5 first:mt-0 last:mb-0">
         {children}
       </p>
     ),
@@ -471,7 +471,7 @@ export function MessageBubble({
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] px-3 py-2.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
+      <div className="message-bubble relative bg-[var(--color-card)] px-2.5 py-2 sm:px-3 sm:py-2 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
         <div className="prose prose-invert prose-sm max-w-none">
           {searchTerm ? (
             <div 
