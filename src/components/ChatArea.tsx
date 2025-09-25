@@ -58,30 +58,6 @@ const WelcomeScreen = React.memo(({
           Your intelligent learning companion is ready to help. Ask anything to get started!
         </p>
         
-        {/* Quick start suggestions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-8">
-          {[
-            "Explain quantum physics",
-            "Help with calculus",
-            "History of the Renaissance", 
-            "Programming concepts"
-          ].map((suggestion, index) => (
-            <button
-              key={index}
-              onClick={() => onSendMessage(suggestion)}
-              disabled={!hasApiKey || isLoading}
-              className="p-3 text-left text-sm bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg hover:border-blue-500/50 hover:bg-blue-500/5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group"
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-blue-400 opacity-70 group-hover:opacity-100 transition-opacity" />
-                <span className="text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">
-                  {suggestion}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-        
         {!hasApiKey && (
           <div className="p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
             <p className="text-sm text-orange-300">
