@@ -1,5 +1,3 @@
-// src/components/ChatArea.tsx
-
 import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
@@ -22,9 +20,9 @@ interface ChatAreaProps {
 }
 
 const MESSAGES_PER_PAGE = 20;
-const SCROLL_THRESHOLD = 100; // Pixels from bottom to trigger scroll button
+const SCROLL_THRESHOLD = 100; // Pixels from bottom to consider "at bottom"
 
-// Welcome screen component
+// Welcome screen component with improved logo glow
 const WelcomeScreen = React.memo(({ 
   onSendMessage, 
   isLoading, 
@@ -49,7 +47,7 @@ const WelcomeScreen = React.memo(({
             alt="AI Tutor Logo"
             className="w-20 h-20 sm:w-24 sm:h-24 mx-auto pulse-subtle"
           />
-          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500/20 to-purple-500/20 blur-xl animate-pulse" />
+          <div className="absolute inset-0 -m-4 bg-gradient-to-r from-blue-500/15 to-purple-500/15 rounded-2xl blur-2xl animate-pulse" />
         </div>
         
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[var(--color-text-primary)] mb-4">
@@ -126,7 +124,9 @@ const ScrollToBottomButton = React.memo(({
   onClick: () => void; 
   show: boolean; 
 }) => (
-  <div className={`scroll-to-bottom ${show ? 'visible' : 'hidden'}`}>
+  <div className={`fixed bottom-24 right-6 z-10 transition-all duration-300 ${
+    show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+  }`}>
     <button
       onClick={onClick}
       className="interactive-button p-3 bg-[var(--color-card)] border border-[var(--color-border)] rounded-full shadow-lg hover:shadow-xl text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] backdrop-blur-sm"
@@ -179,6 +179,7 @@ export function ChatArea({
 }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
   
   // Pagination and scroll state
   const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
@@ -186,6 +187,7 @@ export function ChatArea({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [currentOffset, setCurrentOffset] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   const allMessages = useMemo(() => {
     const baseMessages = conversation?.messages || [];
@@ -220,6 +222,18 @@ export function ChatArea({
     
     // Show scroll button if user has scrolled up significantly
     setShowScrollButton(distanceFromBottom > SCROLL_THRESHOLD);
+    
+    // Detect if user is actively scrolling
+    setIsUserScrolling(distanceFromBottom > 10);
+    
+    // Clear the scrolling timeout and set a new one
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    scrollTimeoutRef.current = setTimeout(() => {
+      setIsUserScrolling(false);
+    }, 1000);
   }, []);
 
   // Load more messages (pagination)
@@ -245,12 +259,12 @@ export function ChatArea({
 
   // Auto-scroll behavior
   useEffect(() => {
-    // Only auto-scroll if the user hasn't scrolled up (indicated by the scroll button's visibility).
-    if (!showScrollButton) {
-      // Use 'auto' for instant jump on new messages to feel responsive
-      scrollToBottom('auto');
+    // Only auto-scroll if user isn't actively scrolling or if it's a new streaming message
+    if (!isUserScrolling || streamingMessage) {
+      const timeoutId = setTimeout(() => scrollToBottom(), 100);
+      return () => clearTimeout(timeoutId);
     }
-  }, [allMessages.length, streamingMessage?.content, showScrollButton, scrollToBottom]);
+  }, [allMessages.length, streamingMessage?.content, scrollToBottom, isUserScrolling]);
 
   // Add scroll event listener
   useEffect(() => {
@@ -260,15 +274,16 @@ export function ChatArea({
     chatContainer.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       chatContainer.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
     };
   }, [handleScroll]);
 
   // Reset scroll state when conversation changes
   useEffect(() => {
     setShowScrollButton(false);
-    if (chatMessagesRef.current) {
-        chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
-    }
+    setIsUserScrolling(false);
   }, [conversation?.id]);
 
   const showWelcomeScreen = !conversation || allMessages.length === 0;
@@ -291,7 +306,10 @@ export function ChatArea({
     <div className="chat-area">
       <div
         ref={chatMessagesRef}
-        className="chat-messages"
+        className="chat-messages scroll-container"
+        style={{ 
+          scrollBehavior: isUserScrolling ? 'auto' : 'smooth'
+        }}
       >
         <div className="chat-messages-container">
           {/* Load More Button */}
@@ -320,7 +338,7 @@ export function ChatArea({
       />
 
       {/* Chat Input */}
-      <div className="chat-input-container">
+      <div className="chat-input-container mobile-chat-area">
         <ChatInput
           onSendMessage={onSendMessage}
           isLoading={isLoading}
