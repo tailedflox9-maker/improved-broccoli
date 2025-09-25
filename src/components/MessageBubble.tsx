@@ -1,5 +1,3 @@
-// src/components/MessageBubble.tsx
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -73,7 +71,7 @@ const CodeBlock = React.memo(({
           {shouldShowCollapse && (
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="interactive-button p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+              className="interactive-button p-1.5 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
               title={isCollapsed ? "Expand code" : "Collapse code"}
             >
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -87,7 +85,7 @@ const CodeBlock = React.memo(({
           )}
           <button
             onClick={handleCopy}
-            className="interactive-button p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+            className="interactive-button p-1.5 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
             title="Copy code"
           >
             {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
