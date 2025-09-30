@@ -1,5 +1,8 @@
+================================================
+FILE: src/services/supabaseService.ts
+================================================
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails, Announcement } from '../types';
 
 // --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
@@ -384,6 +387,127 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
     throw error;
   }
 };
+
+// --- ANNOUNCEMENTS ---
+export async function createAnnouncement(
+  teacherId: string,
+  title: string,
+  content: string,
+  priority: 'low' | 'normal' | 'high' | 'urgent' = 'normal',
+  isPinned: boolean = false,
+  expiresAt?: Date
+) {
+  const { data, error } = await supabase
+    .from('announcements')
+    .insert({
+      teacher_id: teacherId,
+      title,
+      content,
+      priority,
+      is_pinned: isPinned,
+      expires_at: expiresAt
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function getAnnouncements(userId: string, userRole: string) {
+  let query = supabase
+    .from('announcements')
+    .select(`
+      *,
+      profiles!announcements_teacher_id_fkey(full_name)
+    `)
+    .order('is_pinned', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  // Filter expired announcements
+  query = query.or('expires_at.is.null,expires_at.gte.' + new Date().toISOString());
+
+  const { data: announcements, error } = await query;
+
+  if (error) throw error;
+
+  // If student, check read status
+  if (userRole === 'student') {
+    const { data: reads } = await supabase
+      .from('announcement_reads')
+      .select('announcement_id')
+      .eq('user_id', userId);
+
+    const readIds = new Set(reads?.map(r => r.announcement_id) || []);
+
+    return announcements.map(announcement => ({
+      ...announcement,
+      teacher_name: announcement.profiles?.full_name,
+      is_read: readIds.has(announcement.id)
+    }));
+  }
+
+  return announcements.map(announcement => ({
+    ...announcement,
+    teacher_name: announcement.profiles?.full_name
+  }));
+}
+
+export async function markAnnouncementAsRead(announcementId: string, userId: string) {
+  const { error } = await supabase
+    .from('announcement_reads')
+    .insert({
+      announcement_id: announcementId,
+      user_id: userId
+    })
+    .select()
+    .single();
+
+  if (error && error.code !== '23505') { // Ignore duplicate key errors
+    throw error;
+  }
+}
+
+export async function updateAnnouncement(
+  id: string,
+  updates: Partial<Omit<Announcement, 'id' | 'teacher_id' | 'created_at'>>
+) {
+  const { data, error } = await supabase
+    .from('announcements')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAnnouncement(id: string) {
+  const { error } = await supabase
+    .from('announcements')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function getUnreadAnnouncementCount(userId: string) {
+  const { data: allAnnouncements } = await supabase
+    .from('announcements')
+    .select('id')
+    .or('expires_at.is.null,expires_at.gte.' + new Date().toISOString());
+
+  const { data: reads } = await supabase
+    .from('announcement_reads')
+    .select('announcement_id')
+    .eq('user_id', userId);
+
+  const totalCount = allAnnouncements?.length || 0;
+  const readCount = reads?.length || 0;
+
+  return totalCount - readCount;
+}
 
 // --- SAFETY ---
 export const flagMessage = async (flaggedMessage: any) => {
