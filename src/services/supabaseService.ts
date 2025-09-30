@@ -1,6 +1,3 @@
-================================================
-FILE: src/services/supabaseService.ts
-================================================
 import { supabase, getAdminClient } from '../supabase';
 import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails, Announcement } from '../types';
 
