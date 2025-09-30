@@ -49,9 +49,9 @@ const CodeBlock = React.memo(({
     codeContent;
 
   return (
-    <div className="relative my-4 text-sm rounded-lg overflow-hidden border border-[var(--color-border)]">
+    <div className="relative my-3 text-sm rounded-lg overflow-hidden border border-[var(--color-border)]">
       {/* Header with language and actions */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--color-sidebar)] border-b border-[var(--color-border)]">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-sidebar)] border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
             {language || 'text'}
@@ -154,7 +154,7 @@ const LinkRenderer = ({ href, children }: { href?: string; children: React.React
 
 // Optimized table component
 const TableRenderer = ({ children }: { children: React.ReactNode }) => (
-  <div className="overflow-x-auto my-4">
+  <div className="overflow-x-auto my-3">
     <table className="min-w-full divide-y divide-gray-600">
       {children}
     </table>
@@ -359,7 +359,7 @@ export function MessageBubble({
     };
   }, []);
 
-  // Optimized markdown components with better performance
+  // Optimized markdown components with better performance and spacing
   const markdownComponents = useMemo(() => ({
     code: ({ node, inline, className, children, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || '');
@@ -377,7 +377,7 @@ export function MessageBubble({
       
       return (
         <code 
-          className="bg-gray-800 text-gray-100 px-2 py-1 rounded text-sm font-mono" 
+          className="bg-gray-800 text-gray-100 px-1.5 py-0.5 rounded text-sm font-mono" 
           {...props}
         >
           {children}
@@ -390,63 +390,63 @@ export function MessageBubble({
     table: TableRenderer,
     
     th: ({ children }: { children: React.ReactNode }) => (
-      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
+      <th className="px-4 py-2.5 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
         {children}
       </th>
     ),
     
     td: ({ children }: { children: React.ReactNode }) => (
-      <td className="px-4 py-3 text-base text-gray-300 border-b border-gray-700">
+      <td className="px-4 py-2.5 text-sm text-gray-300 border-b border-gray-700">
         {children}
       </td>
     ),
     
     blockquote: ({ children }: { children: React.ReactNode }) => (
-      <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-500/5 rounded-r">
-        <div className="text-gray-300 italic text-base">
+      <blockquote className="border-l-4 border-blue-500 pl-4 py-1.5 my-3 bg-blue-500/5 rounded-r">
+        <div className="text-gray-300 italic text-sm">
           {children}
         </div>
       </blockquote>
     ),
     
     h1: ({ children }: { children: React.ReactNode }) => (
-      <h1 className="text-2xl font-bold text-white mb-4 mt-5 first:mt-0 pb-2 border-b border-gray-700">
+      <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-gray-700">
         {children}
       </h1>
     ),
     
     h2: ({ children }: { children: React.ReactNode }) => (
-      <h2 className="text-xl font-semibold text-white mb-3 mt-5 first:mt-0">
+      <h2 className="text-lg font-semibold text-white mb-2.5 mt-4 first:mt-0">
         {children}
       </h2>
     ),
     
     h3: ({ children }: { children: React.ReactNode }) => (
-      <h3 className="text-lg font-medium text-white mb-3 mt-4 first:mt-0">
+      <h3 className="text-base font-medium text-white mb-2 mt-3 first:mt-0">
         {children}
       </h3>
     ),
     
     ul: ({ children }: { children: React.ReactNode }) => (
-      <ul className="list-disc list-inside space-y-1.5 my-3 ml-4 text-gray-300">
+      <ul className="list-disc list-inside space-y-1 my-2 ml-4 text-gray-300">
         {children}
       </ul>
     ),
     
     ol: ({ children }: { children: React.ReactNode }) => (
-      <ol className="list-decimal list-inside space-y-1.5 my-3 ml-4 text-gray-300">
+      <ol className="list-decimal list-inside space-y-1 my-2 ml-4 text-gray-300">
         {children}
       </ol>
     ),
     
     li: ({ children }: { children: React.ReactNode }) => (
-      <li className="text-gray-300 leading-relaxed text-base">
+      <li className="text-gray-300 leading-relaxed text-sm">
         {children}
       </li>
     ),
     
     p: ({ children }: { children: React.ReactNode }) => (
-      <p className="text-gray-300 leading-relaxed my-2.5 first:mt-0 last:mb-0 text-base">
+      <p className="text-gray-300 leading-relaxed my-2 first:mt-0 last:mb-0 text-sm">
         {children}
       </p>
     ),
@@ -466,23 +466,23 @@ export function MessageBubble({
       id={`message-${message.id}`}
     >
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-          <Sparkles className="w-4 h-4 text-blue-400" />
+        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+          <Sparkles className="w-3.5 h-3.5 text-blue-400" />
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] px-4 py-3 sm:px-5 sm:py-4 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="prose prose-invert prose-base max-w-none">
+      <div className="message-bubble relative bg-[var(--color-card)] px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
+        <div className="prose prose-invert prose-sm max-w-none">
           {searchTerm ? (
             <div 
               dangerouslySetInnerHTML={{ __html: enhancedContent }}
-              className="leading-relaxed text-base" 
+              className="leading-relaxed text-sm" 
             />
           ) : (
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]} 
               components={markdownComponents}
-              className="leading-relaxed text-base"
+              className="leading-relaxed text-sm"
             >
               {message.content}
             </ReactMarkdown>
@@ -510,8 +510,8 @@ export function MessageBubble({
       </div>
       
       {isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
-          <Smile className="w-4 h-4 text-green-400" />
+        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
+          <Smile className="w-3.5 h-3.5 text-green-400" />
         </div>
       )}
     </div>
