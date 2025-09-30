@@ -1,3 +1,6 @@
+================================================
+FILE: src/types.ts
+================================================
 // --- Simplified APISettings ---
 // API keys are no longer stored here; they are read from environment variables.
 export interface APISettings {
@@ -140,6 +143,26 @@ export interface StudentProfileWithDetails extends StudentProfile {
 // == END OF NEW FEATURE
 // =================================================================
 
+export interface Announcement {
+  id: string;
+  teacher_id: string;
+  title: string;
+  content: string;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  is_pinned: boolean;
+  created_at: Date;
+  expires_at?: Date;
+  teacher_name?: string; // Joined from profiles
+  is_read?: boolean; // For student view
+}
+
+export interface AnnouncementRead {
+  id: string;
+  announcement_id: string;
+  user_id: string;
+  read_at: Date;
+}
+
 export type Role = 'student' | 'teacher' | 'admin';
 
 export interface Profile {
@@ -212,6 +235,16 @@ export interface Database {
       // =================================================================
       // == END OF NEW FEATURE
       // =================================================================
+      announcements: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      };
+      announcement_reads: {
+        Row: any;
+        Insert: any;
+        Update: any;
+      };
     }
     Enums: {
       app_role: "student" | "teacher" | "admin"
