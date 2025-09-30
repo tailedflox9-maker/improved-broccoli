@@ -14,6 +14,9 @@ import { aiService } from '../services/aiService';
 import { useAuth } from '../hooks/useAuth';
 import * as db from '../services/supabaseService';
 
+// Helper function to throttle streaming updates for smoother animation
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -311,12 +314,33 @@ export default function ChatPage() {
         content: m.content
       }));
       let fullResponse = '';
+      let chunkBuffer = '';
+      let lastUpdateTime = Date.now();
+      const UPDATE_INTERVAL = 50; // Update UI every 50ms for smoother animation
 
       for await (const chunk of aiService.generateStreamingResponse(messagesForApi, profile.id)) {
         if (stopStreamingRef.current) break;
-        fullResponse += chunk;
-        setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
+        
+        chunkBuffer += chunk;
+        const now = Date.now();
+        
+        // Throttle updates for smoother animation
+        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+          fullResponse += chunkBuffer;
+          setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
+          chunkBuffer = '';
+          lastUpdateTime = now;
+          await sleep(10); // Small delay for smoother rendering
+        }
       }
+      
+      // Add any remaining buffered content
+      if (chunkBuffer && !stopStreamingRef.current) {
+        fullResponse += chunkBuffer;
+        setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
+        await sleep(20); // Brief pause before finalizing
+      }
+
       if (!stopStreamingRef.current && fullResponse.trim()) {
         const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
         db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
