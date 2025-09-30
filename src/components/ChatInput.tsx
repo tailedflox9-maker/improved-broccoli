@@ -71,7 +71,7 @@ export function ChatInput({
   const resizeTextarea = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      const newHeight = Math.min(textareaRef.current.scrollHeight, 120);
+      const newHeight = Math.min(textareaRef.current.scrollHeight, 160);
       textareaRef.current.style.height = `${newHeight}px`;
     }
   }, []);
@@ -256,7 +256,7 @@ export function ChatInput({
             type="button"
             onClick={handleQuizClick}
             disabled={!canGenerateQuiz || isQuizLoading || isLoading}
-            className={`interactive-button w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 ${
+            className={`interactive-button w-9 h-9 flex items-center justify-center rounded-lg transition-all duration-200 ${
               !canGenerateQuiz || isQuizLoading || isLoading
                 ? 'bg-transparent text-[var(--color-text-placeholder)] cursor-not-allowed opacity-50'
                 : 'bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]'
@@ -281,7 +281,7 @@ export function ChatInput({
           <button
             type="submit"
             disabled={!canSend || isLoading}
-            className={`interactive-button w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-200 ${
+            className={`interactive-button w-9 h-9 flex items-center justify-center rounded-lg transition-all duration-200 ${
               !canSend || isLoading
                 ? 'bg-transparent text-[var(--color-text-placeholder)] cursor-not-allowed opacity-50'
                 : 'bg-[var(--color-accent-bg)] text-[var(--color-bg)] hover:bg-[var(--color-accent-bg-hover)] shadow-sm hover:shadow-md'
