@@ -37,8 +37,14 @@ const WelcomeScreen = React.memo(({
   onStopGenerating: () => void;
   onGenerateQuiz: () => void;
 }) => (
-  <div className="chat-area">
-    <div className="flex-1 flex items-center justify-center p-4">
+  <div className="chat-area relative">
+    {/* Floating decorative glow elements */}
+    <div className="absolute top-10 left-10 w-24 h-24 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="absolute bottom-20 right-16 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="absolute top-1/2 right-10 w-20 h-20 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+    <div className="absolute top-1/3 left-1/4 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+    
+    <div className="flex-1 flex items-center justify-center p-4 relative z-10">
       <div className="text-center max-w-md w-full px-4 animate-fade-in-up">
         <div className="relative mb-8 flex justify-center">
           <div className="logo-glow-effect">
@@ -67,7 +73,7 @@ const WelcomeScreen = React.memo(({
         )}
       </div>
     </div>
-    <div className="chat-input-container">
+    <div className="chat-input-container relative z-10">
       <ChatInput
         onSendMessage={onSendMessage}
         isLoading={isLoading}
