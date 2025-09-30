@@ -41,13 +41,14 @@ const WelcomeScreen = React.memo(({
   <div className="chat-area">
     <div className="flex-1 flex items-center justify-center p-4">
       <div className="text-center max-w-md w-full px-4 animate-fade-in-up">
-        <div className="relative mb-6">
-          <img
-            src="/white-logo.png"
-            alt="AI Tutor Logo"
-            className="w-20 h-20 sm:w-24 sm:h-24 mx-auto pulse-subtle"
-          />
-          <div className="absolute inset-0 -m-4 bg-gradient-to-r from-blue-500/15 to-purple-500/15 rounded-2xl blur-2xl animate-pulse" />
+        <div className="relative mb-8 flex justify-center">
+          <div className="logo-glow-effect">
+            <img
+              src="/white-logo.png"
+              alt="AI Tutor Logo"
+              className="w-24 h-24 sm:w-28 sm:h-28 relative z-10"
+            />
+          </div>
         </div>
         
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[var(--color-text-primary)] mb-4">
