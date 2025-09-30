@@ -1,6 +1,3 @@
-================================================
-FILE: src/components/CreateAnnouncementModal.tsx
-================================================
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { createAnnouncement, updateAnnouncement } from '../services/supabaseService';
