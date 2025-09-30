@@ -49,11 +49,11 @@ const CodeBlock = React.memo(({
     codeContent;
 
   return (
-    <div className="relative my-3 text-sm rounded-lg overflow-hidden border border-[var(--color-border)]">
+    <div className="relative my-4 text-sm rounded-lg overflow-hidden border border-[var(--color-border)]">
       {/* Header with language and actions */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[var(--color-sidebar)] border-b border-[var(--color-border)]">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--color-sidebar)] border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-300 uppercase tracking-wide">
+          <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
             {language || 'text'}
           </span>
           {fileName && (
@@ -71,10 +71,10 @@ const CodeBlock = React.memo(({
           {shouldShowCollapse && (
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="interactive-button p-1.5 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
+              className="interactive-button p-2 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
               title={isCollapsed ? "Expand code" : "Collapse code"}
             >
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 {isCollapsed ? (
                   <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                 ) : (
@@ -85,10 +85,10 @@ const CodeBlock = React.memo(({
           )}
           <button
             onClick={handleCopy}
-            className="interactive-button p-1.5 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
+            className="interactive-button p-2 rounded hover:bg-[var(--color-card)] text-gray-400 hover:text-gray-200"
             title="Copy code"
           >
-            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -101,16 +101,16 @@ const CodeBlock = React.memo(({
           PreTag="div" 
           className="!m-0"
           customStyle={{
-            padding: '0.75rem',
+            padding: '1rem',
             margin: 0,
             background: 'var(--color-bg)',
-            fontSize: '0.875rem',
-            lineHeight: '1.4',
+            fontSize: '0.9375rem',
+            lineHeight: '1.6',
           }}
           showLineNumbers={lineCount > 5}
           lineNumberStyle={{
             color: '#6b7280',
-            fontSize: '0.75rem',
+            fontSize: '0.8125rem',
             paddingRight: '1rem',
             userSelect: 'none'
           }}
@@ -119,10 +119,10 @@ const CodeBlock = React.memo(({
         </SyntaxHighlighter>
         
         {isCollapsed && shouldShowCollapse && (
-          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[var(--color-bg)] to-transparent flex items-end justify-center pb-1">
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[var(--color-bg)] to-transparent flex items-end justify-center pb-1.5">
             <button
               onClick={() => setIsCollapsed(false)}
-              className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded bg-[var(--color-card)] hover:bg-[var(--color-border)]"
+              className="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded bg-[var(--color-card)] hover:bg-[var(--color-border)]"
             >
               Show {lineCount - 10} more lines
             </button>
@@ -147,14 +147,14 @@ const LinkRenderer = ({ href, children }: { href?: string; children: React.React
       className="text-blue-400 hover:text-blue-300 underline decoration-blue-400/50 hover:decoration-blue-300 underline-offset-2 transition-colors inline-flex items-center gap-1"
     >
       {children}
-      {isExternal && <ExternalLink className="w-3 h-3 opacity-70" />}
+      {isExternal && <ExternalLink className="w-3.5 h-3.5 opacity-70" />}
     </a>
   );
 };
 
 // Optimized table component
 const TableRenderer = ({ children }: { children: React.ReactNode }) => (
-  <div className="overflow-x-auto my-3">
+  <div className="overflow-x-auto my-4">
     <table className="min-w-full divide-y divide-gray-600">
       {children}
     </table>
@@ -198,13 +198,13 @@ const MessageActions = React.memo(({
   isNoteSaving: boolean;
   isUser: boolean;
 }) => (
-  <div className="absolute -bottom-0.5 -right-0.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-0.5 group-hover:translate-y-0">
-    <div className="flex gap-1 p-1 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-lg backdrop-blur-sm">
+  <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
+    <div className="flex gap-1 p-1.5 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-lg backdrop-blur-sm">
       {!isUser && (
         <button 
           onClick={onSaveAsNote} 
           disabled={isNoteSaving}
-          className={`btn-icon transition-all duration-200 p-1 ${
+          className={`btn-icon transition-all duration-200 p-1.5 ${
             noteSaved 
               ? 'text-blue-400 scale-110' 
               : isNoteSaving 
@@ -213,40 +213,40 @@ const MessageActions = React.memo(({
           }`}
           title={isNoteSaving ? 'Saving...' : noteSaved ? 'Saved!' : 'Save as Note'}
         >
-          <Bookmark size={12} className={noteSaved ? 'fill-current' : ''} />
+          <Bookmark size={14} className={noteSaved ? 'fill-current' : ''} />
         </button>
       )}
       <button 
         onClick={onCopy} 
-        className={`btn-icon transition-all duration-200 p-1 ${
+        className={`btn-icon transition-all duration-200 p-1.5 ${
           copied 
             ? 'text-green-400 scale-110' 
             : 'text-gray-400 hover:text-green-400 hover:scale-110'
         }`}
         title={copied ? 'Copied!' : 'Copy message'}
       >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
+        {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
       {!isUser && (
         <button 
           onClick={onExport} 
-          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200 p-1" 
+          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200 p-1.5" 
           title="Export as Markdown"
         >
-          <Download size={12} />
+          <Download size={14} />
         </button>
       )}
       <button 
         onClick={onFlag} 
         disabled={flagged} 
-        className={`btn-icon transition-all duration-200 p-1 ${
+        className={`btn-icon transition-all duration-200 p-1.5 ${
           flagged 
             ? 'text-yellow-400 cursor-not-allowed scale-110' 
             : 'text-gray-400 hover:text-yellow-400 hover:scale-110'
         }`}
         title={flagged ? 'Flagged for review' : 'Flag for review'}
       >
-        <Flag size={12} className={flagged ? 'fill-current' : ''} />
+        <Flag size={14} className={flagged ? 'fill-current' : ''} />
       </button>
     </div>
   </div>
@@ -377,7 +377,7 @@ export function MessageBubble({
       
       return (
         <code 
-          className="bg-gray-800 text-gray-100 px-1.5 py-0.5 rounded text-sm font-mono" 
+          className="bg-gray-800 text-gray-100 px-2 py-1 rounded text-sm font-mono" 
           {...props}
         >
           {children}
@@ -390,63 +390,63 @@ export function MessageBubble({
     table: TableRenderer,
     
     th: ({ children }: { children: React.ReactNode }) => (
-      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
+      <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
         {children}
       </th>
     ),
     
     td: ({ children }: { children: React.ReactNode }) => (
-      <td className="px-3 py-2 text-sm text-gray-300 border-b border-gray-700">
+      <td className="px-4 py-3 text-base text-gray-300 border-b border-gray-700">
         {children}
       </td>
     ),
     
     blockquote: ({ children }: { children: React.ReactNode }) => (
-      <blockquote className="border-l-4 border-blue-500 pl-3 py-1 my-3 bg-blue-500/5 rounded-r">
-        <div className="text-gray-300 italic">
+      <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-4 bg-blue-500/5 rounded-r">
+        <div className="text-gray-300 italic text-base">
           {children}
         </div>
       </blockquote>
     ),
     
     h1: ({ children }: { children: React.ReactNode }) => (
-      <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-gray-700">
+      <h1 className="text-2xl font-bold text-white mb-4 mt-5 first:mt-0 pb-2 border-b border-gray-700">
         {children}
       </h1>
     ),
     
     h2: ({ children }: { children: React.ReactNode }) => (
-      <h2 className="text-lg font-semibold text-white mb-2 mt-4 first:mt-0">
+      <h2 className="text-xl font-semibold text-white mb-3 mt-5 first:mt-0">
         {children}
       </h2>
     ),
     
     h3: ({ children }: { children: React.ReactNode }) => (
-      <h3 className="text-base font-medium text-white mb-2 mt-3 first:mt-0">
+      <h3 className="text-lg font-medium text-white mb-3 mt-4 first:mt-0">
         {children}
       </h3>
     ),
     
     ul: ({ children }: { children: React.ReactNode }) => (
-      <ul className="list-disc list-inside space-y-0.5 my-2 ml-3 text-gray-300">
+      <ul className="list-disc list-inside space-y-1.5 my-3 ml-4 text-gray-300">
         {children}
       </ul>
     ),
     
     ol: ({ children }: { children: React.ReactNode }) => (
-      <ol className="list-decimal list-inside space-y-0.5 my-2 ml-3 text-gray-300">
+      <ol className="list-decimal list-inside space-y-1.5 my-3 ml-4 text-gray-300">
         {children}
       </ol>
     ),
     
     li: ({ children }: { children: React.ReactNode }) => (
-      <li className="text-gray-300 leading-relaxed">
+      <li className="text-gray-300 leading-relaxed text-base">
         {children}
       </li>
     ),
     
     p: ({ children }: { children: React.ReactNode }) => (
-      <p className="text-gray-300 leading-relaxed my-1.5 first:mt-0 last:mb-0">
+      <p className="text-gray-300 leading-relaxed my-2.5 first:mt-0 last:mb-0 text-base">
         {children}
       </p>
     ),
@@ -460,19 +460,19 @@ export function MessageBubble({
 
   return (
     <div 
-      className={`message-wrapper flex gap-2 sm:gap-3 ${isUser ? 'justify-end' : 'justify-start'} group ${
+      className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group ${
         isHighlighted ? 'bg-yellow-400/10 rounded-lg p-2 -m-2 shadow-lg ring-1 ring-yellow-400/20' : ''
       } ${isStreaming ? 'is-streaming' : ''}`}
       id={`message-${message.id}`}
     >
       {!isUser && (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-          <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+          <Sparkles className="w-4 h-4 text-blue-400" />
         </div>
       )}
       
-      <div className="message-bubble relative bg-[var(--color-card)] px-2.5 py-2 sm:px-3 sm:py-2 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="prose prose-invert prose-sm max-w-none">
+      <div className="message-bubble relative bg-[var(--color-card)] px-4 py-3 sm:px-5 sm:py-4 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
+        <div className="prose prose-invert prose-base max-w-none">
           {searchTerm ? (
             <div 
               dangerouslySetInnerHTML={{ __html: enhancedContent }}
@@ -510,8 +510,8 @@ export function MessageBubble({
       </div>
       
       {isUser && (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
-          <Smile className="w-3.5 h-3.5 text-green-400" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br from-green-500/20 to-teal-500/20 border border-green-500/30">
+          <Smile className="w-4 h-4 text-green-400" />
         </div>
       )}
     </div>
