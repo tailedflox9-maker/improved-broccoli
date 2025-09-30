@@ -20,9 +20,8 @@ interface ChatAreaProps {
 }
 
 const MESSAGES_PER_PAGE = 20;
-const SCROLL_THRESHOLD = 100; // Pixels from bottom to consider "at bottom"
+const SCROLL_THRESHOLD = 100;
 
-// Welcome screen component with improved logo glow
 const WelcomeScreen = React.memo(({ 
   onSendMessage, 
   isLoading, 
@@ -46,7 +45,7 @@ const WelcomeScreen = React.memo(({
             <img
               src="/white-logo.png"
               alt="AI Tutor Logo"
-              className="w-24 h-24 sm:w-28 sm:h-28 relative z-10"
+              className="w-20 h-20 sm:w-24 sm:h-24 relative z-10"
             />
           </div>
         </div>
@@ -82,7 +81,6 @@ const WelcomeScreen = React.memo(({
   </div>
 ));
 
-// Load more button component
 const LoadMoreButton = React.memo(({ 
   onClick, 
   isLoading, 
@@ -117,7 +115,6 @@ const LoadMoreButton = React.memo(({
   );
 });
 
-// Scroll to bottom button
 const ScrollToBottomButton = React.memo(({ 
   onClick, 
   show 
@@ -138,7 +135,6 @@ const ScrollToBottomButton = React.memo(({
   </div>
 ));
 
-// Messages container component
 const MessagesContainer = React.memo(({ 
   messages, 
   streamingMessage, 
@@ -182,7 +178,6 @@ export function ChatArea({
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout>();
   
-  // Pagination and scroll state
   const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -195,7 +190,6 @@ export function ChatArea({
     return streamingMessage ? [...baseMessages, streamingMessage] : baseMessages;
   }, [conversation?.messages, streamingMessage]);
 
-  // Initialize displayed messages and pagination
   useEffect(() => {
     if (conversation) {
       const messages = conversation.messages || [];
@@ -210,7 +204,6 @@ export function ChatArea({
     }
   }, [conversation]);
 
-  // Enhanced scroll management
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
@@ -221,13 +214,9 @@ export function ChatArea({
     const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     
-    // Show scroll button if user has scrolled up significantly
     setShowScrollButton(distanceFromBottom > SCROLL_THRESHOLD);
-    
-    // Detect if user is actively scrolling
     setIsUserScrolling(distanceFromBottom > 10);
     
-    // Clear the scrolling timeout and set a new one
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
     }
@@ -237,7 +226,6 @@ export function ChatArea({
     }, 1000);
   }, []);
 
-  // Load more messages (pagination)
   const handleLoadMore = useCallback(async () => {
     if (!conversation || !onLoadMoreMessages || isLoadingMore || !hasMoreMessages) return;
 
@@ -258,16 +246,13 @@ export function ChatArea({
     }
   }, [conversation, onLoadMoreMessages, isLoadingMore, hasMoreMessages, currentOffset]);
 
-  // Auto-scroll behavior
   useEffect(() => {
-    // Only auto-scroll if user isn't actively scrolling or if it's a new streaming message
     if (!isUserScrolling || streamingMessage) {
       const timeoutId = setTimeout(() => scrollToBottom(), 100);
       return () => clearTimeout(timeoutId);
     }
   }, [allMessages.length, streamingMessage?.content, scrollToBottom, isUserScrolling]);
 
-  // Add scroll event listener
   useEffect(() => {
     const chatContainer = chatMessagesRef.current;
     if (!chatContainer) return;
@@ -281,7 +266,6 @@ export function ChatArea({
     };
   }, [handleScroll]);
 
-  // Reset scroll state when conversation changes
   useEffect(() => {
     setShowScrollButton(false);
     setIsUserScrolling(false);
@@ -313,32 +297,27 @@ export function ChatArea({
         }}
       >
         <div className="chat-messages-container">
-          {/* Load More Button */}
           <LoadMoreButton
             onClick={handleLoadMore}
             isLoading={isLoadingMore}
             hasMore={hasMoreMessages}
           />
           
-          {/* Messages */}
           <MessagesContainer
             messages={displayedMessages}
             streamingMessage={streamingMessage}
             onSaveAsNote={onSaveAsNote}
           />
           
-          {/* Scroll anchor */}
           <div ref={messagesEndRef} className="h-1 flex-shrink-0" />
         </div>
       </div>
 
-      {/* Scroll to bottom button */}
       <ScrollToBottomButton
         onClick={() => scrollToBottom('smooth')}
         show={showScrollButton}
       />
 
-      {/* Chat Input */}
       <div className="chat-input-container mobile-chat-area">
         <ChatInput
           onSendMessage={onSendMessage}
