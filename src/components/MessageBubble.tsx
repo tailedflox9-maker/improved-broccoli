@@ -19,13 +19,13 @@ interface MessageBubbleProps {
 }
 
 // Optimized code block component with better UX
-const CodeBlock = React.memo(({ 
-  language, 
-  children, 
-  fileName 
-}: { 
-  language: string; 
-  children: string; 
+const CodeBlock = React.memo(({
+  language,
+  children,
+  fileName
+}: {
+  language: string;
+  children: string;
   fileName?: string;
 }) => {
   const [copied, setCopied] = useState(false);
@@ -33,7 +33,7 @@ const CodeBlock = React.memo(({
   const codeContent = String(children).replace(/\n$/, '');
   const lineCount = codeContent.split('\n').length;
   const shouldShowCollapse = lineCount > 15;
-  
+
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(codeContent);
@@ -44,8 +44,8 @@ const CodeBlock = React.memo(({
     }
   }, [codeContent]);
 
-  const displayedCode = isCollapsed ? 
-    codeContent.split('\n').slice(0, 10).join('\n') + '\n...' : 
+  const displayedCode = isCollapsed ?
+    codeContent.split('\n').slice(0, 10).join('\n') + '\n...' :
     codeContent;
 
   return (
@@ -92,13 +92,13 @@ const CodeBlock = React.memo(({
           </button>
         </div>
       </div>
-      
+
       {/* Code content */}
       <div className="relative">
-        <SyntaxHighlighter 
-          style={vscDarkPlus} 
-          language={language} 
-          PreTag="div" 
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={language}
+          PreTag="div"
           className="!m-0"
           customStyle={{
             padding: '1rem',
@@ -117,7 +117,7 @@ const CodeBlock = React.memo(({
         >
           {displayedCode}
         </SyntaxHighlighter>
-        
+
         {isCollapsed && shouldShowCollapse && (
           <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[var(--color-bg)] to-transparent flex items-end justify-center pb-1.5">
             <button
@@ -133,12 +133,9 @@ const CodeBlock = React.memo(({
   );
 });
 
-// Enhanced link component
 const LinkRenderer = ({ href, children }: { href?: string; children: React.ReactNode }) => {
   if (!href) return <span>{children}</span>;
-  
   const isExternal = href.startsWith('http') || href.startsWith('https');
-  
   return (
     <a
       href={href}
@@ -152,7 +149,6 @@ const LinkRenderer = ({ href, children }: { href?: string; children: React.React
   );
 };
 
-// Optimized table component
 const TableRenderer = ({ children }: { children: React.ReactNode }) => (
   <div className="overflow-x-auto my-3">
     <table className="min-w-full divide-y divide-gray-600">
@@ -161,10 +157,8 @@ const TableRenderer = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-// Function to highlight search terms in text (improved)
 const highlightSearchTerm = (text: string, searchTerm: string) => {
   if (!searchTerm || !text) return text;
-  
   try {
     const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     return text.replace(regex, '<mark class="bg-yellow-400 text-black rounded px-1">$1</mark>');
@@ -174,18 +168,17 @@ const highlightSearchTerm = (text: string, searchTerm: string) => {
   }
 };
 
-// Message actions component
-const MessageActions = React.memo(({ 
-  message, 
-  onSaveAsNote, 
-  onCopy, 
-  onExport, 
-  onFlag, 
-  copied, 
-  noteSaved, 
-  flagged, 
+const MessageActions = React.memo(({
+  message,
+  onSaveAsNote,
+  onCopy,
+  onExport,
+  onFlag,
+  copied,
+  noteSaved,
+  flagged,
   isNoteSaving,
-  isUser 
+  isUser
 }: {
   message: Message;
   onSaveAsNote: () => void;
@@ -201,14 +194,14 @@ const MessageActions = React.memo(({
   <div className="absolute -bottom-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0">
     <div className="flex gap-1 p-1.5 bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-lg backdrop-blur-sm">
       {!isUser && (
-        <button 
-          onClick={onSaveAsNote} 
+        <button
+          onClick={onSaveAsNote}
           disabled={isNoteSaving}
           className={`btn-icon transition-all duration-200 p-1.5 ${
-            noteSaved 
-              ? 'text-blue-400 scale-110' 
-              : isNoteSaving 
-                ? 'text-gray-500 cursor-not-allowed animate-pulse' 
+            noteSaved
+              ? 'text-blue-400 scale-110'
+              : isNoteSaving
+                ? 'text-gray-500 cursor-not-allowed animate-pulse'
                 : 'text-gray-400 hover:text-blue-400 hover:scale-110'
           }`}
           title={isNoteSaving ? 'Saving...' : noteSaved ? 'Saved!' : 'Save as Note'}
@@ -216,11 +209,11 @@ const MessageActions = React.memo(({
           <Bookmark size={14} className={noteSaved ? 'fill-current' : ''} />
         </button>
       )}
-      <button 
-        onClick={onCopy} 
+      <button
+        onClick={onCopy}
         className={`btn-icon transition-all duration-200 p-1.5 ${
-          copied 
-            ? 'text-green-400 scale-110' 
+          copied
+            ? 'text-green-400 scale-110'
             : 'text-gray-400 hover:text-green-400 hover:scale-110'
         }`}
         title={copied ? 'Copied!' : 'Copy message'}
@@ -228,20 +221,20 @@ const MessageActions = React.memo(({
         {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
       {!isUser && (
-        <button 
-          onClick={onExport} 
-          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200 p-1.5" 
+        <button
+          onClick={onExport}
+          className="btn-icon text-gray-400 hover:text-purple-400 hover:scale-110 transition-all duration-200 p-1.5"
           title="Export as Markdown"
         >
           <Download size={14} />
         </button>
       )}
-      <button 
-        onClick={onFlag} 
-        disabled={flagged} 
+      <button
+        onClick={onFlag}
+        disabled={flagged}
         className={`btn-icon transition-all duration-200 p-1.5 ${
-          flagged 
-            ? 'text-yellow-400 cursor-not-allowed scale-110' 
+          flagged
+            ? 'text-yellow-400 cursor-not-allowed scale-110'
             : 'text-gray-400 hover:text-yellow-400 hover:scale-110'
         }`}
         title={flagged ? 'Flagged for review' : 'Flag for review'}
@@ -282,13 +275,7 @@ export function MessageBubble({
     if (onSaveAsNote && !isNoteSaving) {
       setIsNoteSaving(true);
       try {
-        // Generate a smarter title from the content
-        const title = message.content
-          .replace(/[#*`_~]/g, '') // Remove markdown
-          .split('\n')[0]
-          .slice(0, 60)
-          .trim() + (message.content.length > 60 ? '...' : '');
-        
+        const title = message.content.replace(/[#*`_~]/g, '').split('\n')[0].slice(0, 60).trim() + (message.content.length > 60 ? '...' : '');
         await onSaveAsNote(message.content, title || 'Untitled Note');
         setNoteSaved(true);
         setTimeout(() => setNoteSaved(false), 3000);
@@ -305,7 +292,6 @@ export function MessageBubble({
     try {
       const timestamp = new Date().toISOString().split('T')[0];
       const filename = `ai-tutor-response-${timestamp}-${message.id.slice(-6)}.md`;
-      
       const blob = new Blob([message.content], { type: 'text/markdown;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -322,21 +308,14 @@ export function MessageBubble({
 
   const handleFlag = useCallback(async () => {
     if (!user || flagged) return;
-    
     const confirmed = window.confirm(
       "Flag this message for teacher review?\n\nThis will help your teacher understand what topics you're working on."
     );
-    
     if (confirmed) {
       try {
-        const flagPayload = {
-          message_content: message.content,
-          student_id: message.user_id,
-        };
+        const flagPayload = { message_content: message.content, student_id: message.user_id };
         await flagMessage(flagPayload);
         setFlagged(true);
-        
-        // Show success message
         const notification = document.createElement('div');
         notification.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-slide-up';
         notification.textContent = 'Message flagged for review';
@@ -354,115 +333,40 @@ export function MessageBubble({
   }, [user, flagged, message.content, message.user_id]);
 
   useEffect(() => {
-    return () => { 
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current); 
-    };
+    return () => { if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current); };
   }, []);
 
-  // Optimized markdown components with better performance and spacing
   const markdownComponents = useMemo(() => ({
     code: ({ node, inline, className, children, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || '');
       const language = match ? match[1] : '';
-      
       if (!inline && (match || String(children).includes('\n'))) {
-        return (
-          <CodeBlock 
-            language={language} 
-            children={String(children)}
-            fileName={props['data-filename']}
-          />
-        );
+        return <CodeBlock language={language} children={String(children)} fileName={props['data-filename']} />;
       }
-      
-      return (
-        <code 
-          className="bg-gray-800 text-gray-100 px-1.5 py-0.5 rounded text-sm font-mono" 
-          {...props}
-        >
-          {children}
-        </code>
-      );
+      return <code className="bg-gray-800 text-gray-100 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>{children}</code>;
     },
-    
     a: LinkRenderer,
-    
     table: TableRenderer,
-    
-    th: ({ children }: { children: React.ReactNode }) => (
-      <th className="px-4 py-2.5 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">
-        {children}
-      </th>
-    ),
-    
-    td: ({ children }: { children: React.ReactNode }) => (
-      <td className="px-4 py-2.5 text-sm text-gray-300 border-b border-gray-700">
-        {children}
-      </td>
-    ),
-    
-    blockquote: ({ children }: { children: React.ReactNode }) => (
-      <blockquote className="border-l-4 border-blue-500 pl-4 py-1.5 my-3 bg-blue-500/5 rounded-r">
-        <div className="text-gray-300 italic text-sm">
-          {children}
-        </div>
-      </blockquote>
-    ),
-    
-    h1: ({ children }: { children: React.ReactNode }) => (
-      <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-gray-700">
-        {children}
-      </h1>
-    ),
-    
-    h2: ({ children }: { children: React.ReactNode }) => (
-      <h2 className="text-lg font-semibold text-white mb-2.5 mt-4 first:mt-0">
-        {children}
-      </h2>
-    ),
-    
-    h3: ({ children }: { children: React.ReactNode }) => (
-      <h3 className="text-base font-medium text-white mb-2 mt-3 first:mt-0">
-        {children}
-      </h3>
-    ),
-    
-    ul: ({ children }: { children: React.ReactNode }) => (
-      <ul className="list-disc list-inside space-y-1 my-2 ml-4 text-gray-300">
-        {children}
-      </ul>
-    ),
-    
-    ol: ({ children }: { children: React.ReactNode }) => (
-      <ol className="list-decimal list-inside space-y-1 my-2 ml-4 text-gray-300">
-        {children}
-      </ol>
-    ),
-    
-    li: ({ children }: { children: React.ReactNode }) => (
-      <li className="text-gray-300 leading-relaxed text-sm">
-        {children}
-      </li>
-    ),
-    
-    p: ({ children }: { children: React.ReactNode }) => (
-      <p className="text-gray-300 leading-relaxed my-2 first:mt-0 last:mb-0 text-sm">
-        {children}
-      </p>
-    ),
+    th: ({ children }: { children: React.ReactNode }) => <th className="px-4 py-2.5 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider bg-gray-800">{children}</th>,
+    td: ({ children }: { children: React.ReactNode }) => <td className="px-4 py-2.5 text-sm text-gray-300 border-b border-gray-700">{children}</td>,
+    blockquote: ({ children }: { children: React.ReactNode }) => <blockquote className="border-l-4 border-blue-500 pl-4 py-1.5 my-3 bg-blue-500/5 rounded-r"><div className="text-gray-300 italic">{children}</div></blockquote>,
+    h1: ({ children }: { children: React.ReactNode }) => <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-gray-700">{children}</h1>,
+    h2: ({ children }: { children: React.ReactNode }) => <h2 className="text-lg font-semibold text-white mb-2.5 mt-4 first:mt-0">{children}</h2>,
+    h3: ({ children }: { children: React.ReactNode }) => <h3 className="font-medium text-white mb-2 mt-3 first:mt-0">{children}</h3>,
+    ul: ({ children }: { children: React.ReactNode }) => <ul className="list-disc list-inside space-y-1 my-2 ml-4">{children}</ul>,
+    ol: ({ children }: { children: React.ReactNode }) => <ol className="list-decimal list-inside space-y-1 my-2 ml-4">{children}</ol>,
+    li: ({ children }: { children: React.ReactNode }) => <li className="leading-relaxed">{children}</li>,
+    p: ({ children }: { children: React.ReactNode }) => <p className="leading-relaxed my-2 first:mt-0 last:mb-0">{children}</p>,
   }), []);
 
-  // Enhanced content with search highlighting
   const enhancedContent = useMemo(() => {
     if (!searchTerm) return message.content;
     return highlightSearchTerm(message.content, searchTerm);
   }, [message.content, searchTerm]);
 
   return (
-    <div 
-      className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group ${
-        isHighlighted ? 'bg-yellow-400/10 rounded-lg p-2 -m-2 shadow-lg ring-1 ring-yellow-400/20' : ''
-      } ${isStreaming ? 'is-streaming' : ''}`}
+    <div
+      className={`message-wrapper flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'} group ${isHighlighted ? 'bg-yellow-400/10 rounded-lg p-2 -m-2 shadow-lg ring-1 ring-yellow-400/20' : ''} ${isStreaming ? 'is-streaming' : ''}`}
       id={`message-${message.id}`}
     >
       {!isUser && (
@@ -472,17 +376,17 @@ export function MessageBubble({
       )}
       
       <div className="message-bubble relative bg-[var(--color-card)] px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="prose prose-invert prose-sm max-w-none">
+        {/* THIS IS THE KEY CHANGE FOR FONT SIZE */}
+        <div className="prose prose-invert prose-base max-w-none">
           {searchTerm ? (
-            <div 
+            <div
               dangerouslySetInnerHTML={{ __html: enhancedContent }}
-              className="leading-relaxed text-sm" 
+              className="leading-relaxed" 
             />
           ) : (
-            <ReactMarkdown 
-              remarkPlugins={[remarkGfm]} 
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={markdownComponents}
-              className="leading-relaxed text-sm"
             >
               {message.content}
             </ReactMarkdown>
