@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Plus,
   MessageSquare,
@@ -15,12 +15,11 @@ import {
   ClipboardCheck,
   CheckCircle,
   Clock,
-  Bell,
 } from 'lucide-react';
 import { Conversation, Note, Profile, QuizAssignmentWithDetails } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
-import { getUnreadAnnouncementCount } from '../services/supabaseService';
+import { formatDate } from '../utils/helpers';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -45,8 +44,6 @@ interface SidebarProps {
   onToggleAdminPanel?: () => void;
   onToggleTeacherDashboard?: () => void;
   onSwitchToChatView: () => void;
-  onOpenAnnouncements?: () => void;
-  unreadAnnouncements: number;
 }
 
 export function Sidebar({
@@ -72,8 +69,6 @@ export function Sidebar({
   onToggleAdminPanel,
   onToggleTeacherDashboard,
   onSwitchToChatView,
-  onOpenAnnouncements,
-  unreadAnnouncements,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,16 +76,25 @@ export function Sidebar({
   const [view, setView] = useState<'chats' | 'notes' | 'quizzes'>('chats');
   const { logout } = useAuth();
 
-  const filteredConversations = conversations.filter(c =>
-    c.title.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredConversations = useMemo(() =>
+    conversations.filter(c =>
+      c.title.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [conversations, searchQuery]
   );
 
-  const filteredNotes = notes.filter(n =>
-    n.title.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredNotes = useMemo(() =>
+    notes.filter(n =>
+      n.title.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [notes, searchQuery]
   );
 
-  const filteredQuizzes = assignedQuizzes.filter(q =>
-    q.generated_quizzes.topic.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredQuizzes = useMemo(() =>
+    assignedQuizzes.filter(q =>
+      q.generated_quizzes.topic.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [assignedQuizzes, searchQuery]
   );
 
   const handleStartEditing = (conversation: Conversation) => {
@@ -312,24 +316,6 @@ export function Sidebar({
             {!isFolded && 'Chats'}
           </button>
           
-          {userProfile?.role === 'student' && onOpenAnnouncements && (
-            <button
-              onClick={onOpenAnnouncements}
-              className="nav-btn w-full relative"
-            >
-              <Bell size={18} />
-              {!isFolded && 'Announcements'}
-              {unreadAnnouncements > 0 && !isFolded && (
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-blue-600 text-white text-xs font-bold rounded-full">
-                  {unreadAnnouncements}
-                </span>
-              )}
-               {unreadAnnouncements > 0 && isFolded && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full border-2 border-[var(--color-sidebar)]"></span>
-              )}
-            </button>
-          )}
-
           {userProfile?.role === 'teacher' && onToggleTeacherDashboard && (
             <button 
               onClick={onToggleTeacherDashboard} 
