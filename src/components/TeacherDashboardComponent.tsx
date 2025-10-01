@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import * as db from '../services/supabaseService';
 import { aiService } from '../services/aiService';
-import { Profile, FlaggedMessage, GeneratedQuiz, Announcement } from '../types';
+import { Profile, FlaggedMessage, GeneratedQuiz } from '../types';
 import {
   BookOpen,
   MessageSquare,
@@ -22,13 +22,10 @@ import {
   Eye,
   Trash2,
   Award,
-  UserCog,
-  Bell,
-  Edit
+  UserCog
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 import { StudentProfilesComponent } from './StudentProfilesComponent';
-import { CreateAnnouncementModal } from './CreateAnnouncementModal';
 
 interface StudentStats {
   questionCount: number;
@@ -45,7 +42,6 @@ export function TeacherDashboardComponent() {
   const [students, setStudents] = useState<StudentWithStats[]>([]);
   const [flaggedMessages, setFlaggedMessages] = useState<FlaggedMessage[]>([]);
   const [generatedQuizzes, setGeneratedQuizzes] = useState<GeneratedQuiz[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles'>('dashboard');
@@ -59,8 +55,6 @@ export function TeacherDashboardComponent() {
   const [isAssigning, setIsAssigning] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewQuiz, setReviewQuiz] = useState<GeneratedQuiz | null>(null);
-  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
-  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
 
   const fetchData = async () => {
     const userId = user?.id || profile?.id;
@@ -70,11 +64,19 @@ export function TeacherDashboardComponent() {
     setError(null);
 
     try {
-      const [assignedStudents, messages, quizzes, announcementsData] = await Promise.all([
-        db.getStudentsForTeacher(userId),
-        db.getFlaggedMessagesForTeacher(userId),
-        db.getGeneratedQuizzesForTeacher(userId),
-        db.getAnnouncements(userId, 'teacher'),
+      const [assignedStudents, messages, quizzes] = await Promise.all([
+        db.getStudentsForTeacher(userId).catch(err => {
+          console.error('Error fetching students:', err);
+          return [];
+        }),
+        db.getFlaggedMessagesForTeacher(userId).catch(err => {
+          console.error('Error fetching flagged messages:', err);
+          return [];
+        }),
+        db.getGeneratedQuizzesForTeacher(userId).catch(err => {
+          console.error('Error fetching generated quizzes:', err);
+          return [];
+        }),
       ]);
 
       const studentsWithStats = await Promise.all(
@@ -99,7 +101,6 @@ export function TeacherDashboardComponent() {
       setStudents(studentsWithStats);
       setFlaggedMessages(messages);
       setGeneratedQuizzes(quizzes);
-      setAnnouncements(announcementsData as Announcement[]);
 
     } catch (error: any) {
       console.error('Error in fetchData:', error);
@@ -116,27 +117,6 @@ export function TeacherDashboardComponent() {
     }
   }, [user?.id, profile?.id]);
 
-  const handleOpenCreateAnnouncement = () => {
-    setEditingAnnouncement(null);
-    setIsAnnouncementModalOpen(true);
-  };
-
-  const handleOpenEditAnnouncement = (announcement: Announcement) => {
-    setEditingAnnouncement(announcement);
-    setIsAnnouncementModalOpen(true);
-  };
-
-  const handleDeleteAnnouncement = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this announcement?')) {
-      try {
-        await db.deleteAnnouncement(id);
-        fetchData(); // Refresh data
-      } catch (error: any) {
-        alert('Failed to delete announcement: ' + error.message);
-      }
-    }
-  };
-  
   const handleGenerateQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quizTopic.trim()) {
@@ -304,6 +284,11 @@ export function TeacherDashboardComponent() {
               Student Profiles
             </button>
           </div>
+          {process.env.NODE_ENV === 'development' && (
+            <p className="text-xs text-gray-500 mt-2">
+              User ID: {user?.id || profile?.id} | Students: {students.length} | Messages: {flaggedMessages.length} | Quizzes: {generatedQuizzes.length}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -336,12 +321,9 @@ export function TeacherDashboardComponent() {
                 <ClipboardCheck size={18} /> Class Tools
               </h3>
               <div className="p-6 space-y-4">
-                <button
-                  onClick={handleOpenCreateAnnouncement}
-                  className="btn-primary w-full"
-                >
-                  <Bell size={16} /> Create Announcement
-                </button>
+                <p className="text-sm text-gray-400">
+                  Generate a quiz on any topic for your class to complete.
+                </p>
                 <button
                   onClick={() => setIsQuizModalOpen(true)}
                   className="btn-primary w-full"
@@ -395,33 +377,11 @@ export function TeacherDashboardComponent() {
                   ))
                 ) : (
                   <p className="text-sm text-gray-500 text-center py-4">
-                    No quizzes generated yet.
+                    No quizzes generated yet. Click "Generate New Quiz" to create one.
                   </p>
                 )}
               </div>
             </div>
-            
-            <div className="admin-card">
-              <h3 className="card-header">Announcements ({announcements.length})</h3>
-              <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-                {announcements.length > 0 ? (
-                  announcements.map(ann => (
-                    <div key={ann.id} className="bg-gray-900/50 p-3 rounded-lg">
-                      <p className="font-semibold text-white truncate">{ann.title}</p>
-                      <p className="text-xs text-gray-400 capitalize">{ann.priority} Priority</p>
-                      <p className="text-xs text-gray-500">Posted: {formatDate(new Date(ann.created_at))}</p>
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => handleOpenEditAnnouncement(ann)} className="flex-1 btn-secondary text-xs"><Edit size={12} className="inline mr-1"/> Edit</button>
-                        <button onClick={() => handleDeleteAnnouncement(ann.id)} className="flex-1 btn-secondary text-xs text-red-400 hover:bg-red-900/40"><Trash2 size={12} className="inline mr-1"/> Delete</button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500 text-center py-4">No announcements created yet.</p>
-                )}
-              </div>
-            </div>
-
           </div>
           <div className="lg:col-span-2 space-y-8">
             <div className="admin-card">
@@ -470,6 +430,37 @@ export function TeacherDashboardComponent() {
                 </button>
               </div>
 
+              {loading && (
+                <div className="text-center p-12">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-500" />
+                  <p className="text-gray-400 mt-2">Loading students...</p>
+                </div>
+              )}
+
+              {error && (
+                <div className="text-center p-12">
+                  <AlertTriangle className="w-8 h-8 mx-auto text-red-500" />
+                  <p className="text-red-400 font-semibold mt-2">Error Loading Data</p>
+                  <p className="text-gray-400 text-sm">{error}</p>
+                  <button
+                    onClick={fetchData}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              )}
+
+              {!loading && !error && students.length === 0 && (
+                <div className="text-center p-20">
+                  <Users size={48} className="mx-auto text-gray-600 mb-4" />
+                  <h3 className="text-xl font-semibold text-white mb-2">No Students Assigned</h3>
+                  <p className="text-gray-400">
+                    Please contact an administrator to have students assigned to you.
+                  </p>
+                </div>
+              )}
+
               {!loading && !error && students.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
                   {students.map((student) => (
@@ -510,12 +501,7 @@ export function TeacherDashboardComponent() {
         </div>
       </div>
     </div>
-    <CreateAnnouncementModal 
-      isOpen={isAnnouncementModalOpen}
-      onClose={() => setIsAnnouncementModalOpen(false)}
-      onSave={fetchData}
-      announcementToEdit={editingAnnouncement}
-    />
+
     {isQuizModalOpen && (
       <div
         className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
@@ -573,6 +559,197 @@ export function TeacherDashboardComponent() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    )}
+
+    {isAssignModalOpen && selectedQuiz && (
+      <div
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+        onClick={() => setIsAssignModalOpen(false)}
+      >
+        <div
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Share2 size={20}/> Assign Quiz: {selectedQuiz.topic}
+            </h2>
+            <button
+              onClick={() => setIsAssignModalOpen(false)}
+              className="p-2 hover:bg-[var(--color-border)] rounded-lg"
+            >
+              <X size={18}/>
+            </button>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div>
+              <label className="input-label mb-3">Select Students ({selectedStudents.length} selected)</label>
+              {students.length === 0 ? (
+                <div className="text-center p-8 border border-[var(--color-border)] rounded-lg bg-gray-900/20">
+                  <Users size={32} className="mx-auto text-gray-600 mb-2" />
+                  <p className="text-gray-400">No students assigned to you</p>
+                  <p className="text-xs text-gray-500 mt-1">Contact an admin to assign students</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto border border-[var(--color-border)] rounded-lg p-3 bg-gray-900/20">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStudents(selectedStudents.length === students.length ? [] : students.map(s => s.id))}
+                    className="text-sm text-blue-400 hover:text-blue-300 mb-2"
+                  >
+                    {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  {students.map(student => (
+                    <label key={student.id} className="flex items-center gap-3 p-2 hover:bg-gray-800/50 rounded-lg cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudents.includes(student.id)}
+                        onChange={() => toggleStudentSelection(student.id)}
+                        className="rounded border-gray-600 text-blue-500 focus:ring-blue-500 focus:ring-2"
+                      />
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-green-900/40 rounded-full flex items-center justify-center">
+                          <User className="w-3 h-3 text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">{student.full_name}</p>
+                          <p className="text-gray-400 text-xs">{student.email}</p>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="input-label mb-2">Quiz Preview</label>
+              <div className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-3 text-sm">
+                <p className="text-white font-medium">{selectedQuiz.questions.length} Questions</p>
+                <p className="text-gray-400 mt-1">Topic: {selectedQuiz.topic}</p>
+                <div className="mt-2 space-y-1 text-xs text-gray-500">
+                  {selectedQuiz.questions.slice(0, 2).map((q, idx) => (
+                    <p key={idx}>• {q.question.substring(0, 80)}...</p>
+                  ))}
+                  {selectedQuiz.questions.length > 2 && <p>• And {selectedQuiz.questions.length - 2} more questions...</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-between">
+            <button
+              onClick={() => setIsAssignModalOpen(false)}
+              className="btn-secondary px-6 py-2"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmAssignment}
+              disabled={isAssigning || selectedStudents.length === 0}
+              className="btn-primary px-6 py-2"
+            >
+              {isAssigning ? (
+                <>
+                  <Loader2 size={16} className="animate-spin mr-2"/>
+                  Assigning...
+                </>
+              ) : (
+                `Assign to ${selectedStudents.length} Student${selectedStudents.length !== 1 ? 's' : ''}`
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {isReviewModalOpen && reviewQuiz && (
+      <div
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+        onClick={() => setIsReviewModalOpen(false)}
+      >
+        <div
+          className="bg-[var(--color-card)] rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Eye size={20}/> Review Quiz: {reviewQuiz.topic}
+            </h2>
+            <button
+              onClick={() => setIsReviewModalOpen(false)}
+              className="p-2 hover:bg-[var(--color-border)] rounded-lg"
+            >
+              <X size={18}/>
+            </button>
+          </div>
+
+          <div className="p-6">
+            <div className="mb-6">
+              <div className="flex items-center gap-4 text-sm text-gray-400">
+                <span className="flex items-center gap-1">
+                  <Award size={16}/> {reviewQuiz.questions.length} Questions
+                </span>
+                <span>Created: {formatDate(new Date(reviewQuiz.created_at))}</span>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {reviewQuiz.questions.map((question, index) => (
+                <div key={question.id} className="bg-gray-900/20 border border-[var(--color-border)] rounded-lg p-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-6 h-6 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-400 font-bold text-sm shrink-0 mt-1">
+                      {index + 1}
+                    </div>
+                    <h4 className="text-white font-semibold text-base leading-relaxed">
+                      {question.question}
+                    </h4>
+                  </div>
+
+                  <div className="ml-9 space-y-2">
+                    {question.options.map((option, optIndex) => (
+                      <div
+                        key={optIndex}
+                        className={`p-2 rounded-lg text-sm ${
+                          question.correctAnswer === optIndex
+                            ? 'bg-green-900/30 border border-green-500/50 text-green-300'
+                            : 'bg-gray-800/50 text-gray-300'
+                        }`}
+                      >
+                        <span className="font-medium mr-2">
+                          {String.fromCharCode(65 + optIndex)}.
+                        </span>
+                        {option}
+                        {question.correctAnswer === optIndex && (
+                          <CheckCircle size={16} className="inline ml-2 text-green-400" />
+                        )}
+                      </div>
+                    ))}
+
+                    {question.explanation && (
+                      <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                        <p className="text-xs text-yellow-200">
+                          <strong>Explanation:</strong> {question.explanation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-900/50 border-t border-[var(--color-border)] flex justify-end">
+            <button
+              onClick={() => setIsReviewModalOpen(false)}
+              className="btn-secondary px-6 py-2"
+            >
+              Close Review
+            </button>
+          </div>
         </div>
       </div>
     )}
