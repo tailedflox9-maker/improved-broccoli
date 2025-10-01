@@ -1,5 +1,3 @@
-// src/components/NoteView.tsx
-
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -88,9 +86,9 @@ export function NoteView({ note }: NoteViewProps) {
           </h1>
           <div className="flex flex-wrap items-center gap-4 text-sm text-[var(--color-text-secondary)]">
             <span>
-              Saved on: {formatDate(note.createdAt)}
+              Saved on: {formatDate(new Date(note.created_at))}
             </span>
-            {note.sourceConversationId && (
+            {note.source_conversation_id && (
               <span className="px-2 py-1 bg-[var(--color-card)] rounded-full text-xs">
                 From Chat
               </span>
