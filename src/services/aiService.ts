@@ -151,20 +151,36 @@ class AiService {
 
   public async *generateStreamingResponse(
     messages: { role: string; content: string }[],
-    userId?: string,
-    messageId?: string
+    userId: string,
+    messageId: string
   ): AsyncGenerator<{ chunk: string; tokenData?: { input: number; output: number; total: number } }> {
     const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
     const systemPrompt = await this.generatePersonalizedSystemPrompt(userId);
     
-    let tokenData: { input: number; output: number; total: number } | undefined;
+    let finalTokenData: { input: number; output: number; total: number } | undefined;
+    
+    const recordAndFinalize = async (data: { input: number; output: number; total: number }) => {
+      finalTokenData = data;
+      try {
+        await db.recordTokenUsage({
+          user_id: userId,
+          message_id: messageId,
+          model: this.settings.selectedModel,
+          input_tokens: data.input,
+          output_tokens: data.output,
+          total_tokens: data.total
+        });
+        console.log('Token usage recorded successfully for message:', messageId);
+      } catch (error) {
+        console.error('Failed to record token usage:', error);
+      }
+    };
     
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
-        // Estimate input tokens
         const inputTokens = estimateTokens(systemPrompt + userMessages.map(m => m.content).join(''));
         let outputText = '';
         
@@ -197,14 +213,13 @@ class AiService {
                 const json = JSON.parse(line.substring(6));
                 const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text;
                 
-                // Check for usage metadata from Google API
                 const usageMetadata = json.usageMetadata;
                 if (usageMetadata) {
-                  tokenData = {
+                   await recordAndFinalize({
                     input: usageMetadata.promptTokenCount || inputTokens,
                     output: usageMetadata.candidatesTokenCount || estimateTokens(outputText),
                     total: usageMetadata.totalTokenCount || (inputTokens + estimateTokens(outputText))
-                  };
+                  });
                 }
                 
                 if (chunk) {
@@ -218,70 +233,33 @@ class AiService {
           }
         }
         
-        // Final token calculation if not provided by API
-        if (!tokenData) {
+        if (!finalTokenData) {
           const outputTokens = estimateTokens(outputText);
-          tokenData = {
+           await recordAndFinalize({
             input: inputTokens,
             output: outputTokens,
             total: inputTokens + outputTokens
-          };
+          });
         }
-        
-        // Save token usage
-        if (userId && messageId && tokenData) {
-          try {
-            await db.recordTokenUsage({
-              user_id: userId,
-              message_id: messageId,
-              model: this.settings.selectedModel,
-              input_tokens: tokenData.input,
-              output_tokens: tokenData.output,
-              total_tokens: tokenData.total
-            });
-          } catch (error) {
-            console.error('Failed to record token usage:', error);
-          }
-        }
-        
-        yield { chunk: '', tokenData };
         break;
       }
       
       case 'zhipu': {
         if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured on the server.');
-        
-        for await (const result of streamOpenAICompatResponse(
+        const stream = streamOpenAICompatResponse(
           'https://open.bigmodel.cn/api/paas/v4/chat/completions', 
           ZHIPU_API_KEY, 
           'glm-4-flash', 
           userMessages, 
           systemPrompt
-        )) {
+        );
+        for await (const result of stream) {
           if (result.tokenData) {
-            tokenData = {
+            await recordAndFinalize({
               input: result.tokenData.input,
               output: result.tokenData.output,
               total: result.tokenData.input + result.tokenData.output
-            };
-            
-            // Save token usage
-            if (userId && messageId && tokenData) {
-              try {
-                await db.recordTokenUsage({
-                  user_id: userId,
-                  message_id: messageId,
-                  model: this.settings.selectedModel,
-                  input_tokens: tokenData.input,
-                  output_tokens: tokenData.output,
-                  total_tokens: tokenData.total
-                });
-              } catch (error) {
-                console.error('Failed to record token usage:', error);
-              }
-            }
-            
-            yield { chunk: '', tokenData };
+            });
           } else {
             yield { chunk: result.chunk };
           }
@@ -291,38 +269,20 @@ class AiService {
       
       case 'mistral-small': {
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        
-        for await (const result of streamOpenAICompatResponse(
+        const stream = streamOpenAICompatResponse(
           'https://api.mistral.ai/v1/chat/completions', 
           MISTRAL_API_KEY, 
           'mistral-small-latest', 
           userMessages, 
           systemPrompt
-        )) {
+        );
+        for await (const result of stream) {
           if (result.tokenData) {
-            tokenData = {
+            await recordAndFinalize({
               input: result.tokenData.input,
               output: result.tokenData.output,
               total: result.tokenData.input + result.tokenData.output
-            };
-            
-            // Save token usage
-            if (userId && messageId && tokenData) {
-              try {
-                await db.recordTokenUsage({
-                  user_id: userId,
-                  message_id: messageId,
-                  model: this.settings.selectedModel,
-                  input_tokens: tokenData.input,
-                  output_tokens: tokenData.output,
-                  total_tokens: tokenData.total
-                });
-              } catch (error) {
-                console.error('Failed to record token usage:', error);
-              }
-            }
-            
-            yield { chunk: '', tokenData };
+            });
           } else {
             yield { chunk: result.chunk };
           }
@@ -332,38 +292,20 @@ class AiService {
       
       case 'mistral-codestral': {
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        
-        for await (const result of streamOpenAICompatResponse(
+        const stream = streamOpenAICompatResponse(
           'https://api.mistral.ai/v1/chat/completions', 
           MISTRAL_API_KEY, 
           'codestral-latest', 
           userMessages, 
           systemPrompt
-        )) {
+        );
+        for await (const result of stream) {
           if (result.tokenData) {
-            tokenData = {
+            await recordAndFinalize({
               input: result.tokenData.input,
               output: result.tokenData.output,
               total: result.tokenData.input + result.tokenData.output
-            };
-            
-            // Save token usage
-            if (userId && messageId && tokenData) {
-              try {
-                await db.recordTokenUsage({
-                  user_id: userId,
-                  message_id: messageId,
-                  model: this.settings.selectedModel,
-                  input_tokens: tokenData.input,
-                  output_tokens: tokenData.output,
-                  total_tokens: tokenData.total
-                });
-              } catch (error) {
-                console.error('Failed to record token usage:', error);
-              }
-            }
-            
-            yield { chunk: '', tokenData };
+            });
           } else {
             yield { chunk: result.chunk };
           }
@@ -373,6 +315,10 @@ class AiService {
       
       default:
         throw new Error('Invalid model selected.');
+    }
+
+    if (finalTokenData) {
+      yield { chunk: '', tokenData: finalTokenData };
     }
   }
 
