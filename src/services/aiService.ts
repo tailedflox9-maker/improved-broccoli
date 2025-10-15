@@ -180,7 +180,7 @@ class AiService {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
         // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
         const inputTokens = estimateTokens(systemPrompt + userMessages.map(m => m.content).join(''));
         let outputText = '';
