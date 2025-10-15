@@ -1,35 +1,26 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails, TokenUsage, TokenAnalytics, DailyTokenStats, UserTokenStats, ModelTokenStats } from '../types';
 
 // --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
   console.log('Getting user profile...');
   
   try {
-    // Get current authenticated user
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
     if (userError || !user) {
       console.error('Authentication error:', userError);
       throw new Error('User not authenticated');
     }
-    
     console.log('Authenticated user found:', user.email);
-    
-    // Get profile directly from profiles table
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single();
-    
     if (profileError) {
       console.error('Profile query error:', profileError);
-      
-      // If profile doesn't exist, create it
       if (profileError.code === 'PGRST116') {
         console.log('Profile not found, creating new profile...');
-        
         const newProfile = {
           id: user.id,
           email: user.email || '',
@@ -37,32 +28,23 @@ export const getProfile = async (): Promise<Profile> => {
           role: user.user_metadata?.role || 'student',
           teacher_id: user.user_metadata?.teacher_id || null
         };
-        
         const { data: createdProfile, error: createError } = await supabase
           .from('profiles')
           .insert(newProfile)
           .select()
           .single();
-          
         if (createError) {
           console.error('Failed to create profile:', createError);
           throw new Error(`Failed to create profile: ${createError.message}`);
         }
-        
         console.log('Profile created successfully:', createdProfile);
         return createdProfile as Profile;
       }
-      
       throw new Error(`Profile error: ${profileError.message}`);
     }
-    
-    if (!profile) {
-      throw new Error('Profile data is null');
-    }
-    
+    if (!profile) throw new Error('Profile data is null');
     console.log('Profile loaded successfully:', profile.email, profile.role);
     return profile as Profile;
-    
   } catch (error: any) {
     console.error('getProfile failed:', error.message);
     throw new Error(`Could not load user profile: ${error.message}`);
@@ -87,38 +69,30 @@ export const getConversations = async (userId: string): Promise<Conversation[]> 
 
 export const getConversationMessages = async (conversationId: string): Promise<Message[]> => {
     console.log('Fetching messages for conversation ID:', conversationId);
-
     if (!conversationId || conversationId.trim() === '') {
         console.error('Invalid conversation ID provided:', conversationId);
         throw new Error('Conversation ID is required');
     }
-
     try {
         const { data, error } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-
         if (error) {
             console.error('Supabase error fetching messages:', error);
             throw error;
         }
-
         console.log('Raw message data from database:', data);
-
         if (!data) {
             console.log('No data returned from query');
             return [];
         }
-
         const messages = data.map(msg => ({
             ...msg,
             created_at: new Date(msg.created_at)
         })) as Message[];
-
         console.log('Processed messages:', messages);
-
         return messages;
     } catch (error) {
         console.error('Error in getConversationMessages:', error);
@@ -126,24 +100,19 @@ export const getConversationMessages = async (conversationId: string): Promise<M
     }
 };
 
-// Admin-specific message fetching function
 export const getConversationMessages_Admin = async (conversationId: string): Promise<Message[]> => {
     console.log('Admin: Fetching messages for conversation ID:', conversationId);
-
     if (!conversationId || conversationId.trim() === '') {
         console.error('Invalid conversation ID provided:', conversationId);
         throw new Error('Conversation ID is required');
     }
-
     try {
-        // Try with admin client first
         const adminClient = getAdminClient();
         const { data: adminData, error: adminError } = await adminClient
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-
         if (!adminError && adminData) {
             console.log('Admin client successful, found messages:', adminData.length);
             return adminData.map(msg => ({
@@ -151,32 +120,22 @@ export const getConversationMessages_Admin = async (conversationId: string): Pro
                 created_at: new Date(msg.created_at)
             })) as Message[];
         }
-
         console.log('Admin client failed, trying regular client:', adminError);
-
-        // Fallback to regular client
         const { data, error } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
-
         if (error) {
             console.error('Both admin and regular client failed:', error);
             throw error;
         }
-
         console.log('Regular client result:', data?.length || 0, 'messages');
-
-        if (!data) {
-            return [];
-        }
-
+        if (!data) return [];
         return data.map(msg => ({
             ...msg,
             created_at: new Date(msg.created_at)
         })) as Message[];
-
     } catch (error) {
         console.error('Error in getConversationMessages_Admin:', error);
         throw error;
@@ -219,7 +178,6 @@ export const updateConversationTimestamp = async (id: string) => {
     if (error) throw error;
 };
 
-// Soft delete for regular users
 export const deleteConversation = async (id: string) => {
   const { error } = await supabase
     .from('conversations')
@@ -314,28 +272,21 @@ export const markQuizAsCompleted = async (assignmentId: string, score: number, t
   if (error) throw error;
 };
 
-// Function to delete a generated quiz
 export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   try {
-    // First check if there are any assignments for this quiz
     const { data: assignments, error: checkError } = await supabase
       .from('quiz_assignments')
       .select('id')
       .eq('quiz_id', quizId)
       .limit(1);
-
     if (checkError) throw checkError;
-
     if (assignments && assignments.length > 0) {
       throw new Error('Cannot delete quiz that has been assigned to students. Please remove assignments first.');
     }
-
-    // Delete the quiz if no assignments exist
     const { error } = await supabase
       .from('generated_quizzes')
       .delete()
       .eq('id', quizId);
-
     if (error) throw error;
   } catch (error: any) {
     console.error('Error deleting quiz:', error);
@@ -343,7 +294,6 @@ export const deleteGeneratedQuiz = async (quizId: string): Promise<void> => {
   }
 };
 
-// Function to get quiz assignments with completion details for a teacher
 export const getQuizAssignmentDetails = async (teacherId: string) => {
   try {
     const { data, error } = await supabase
@@ -359,7 +309,6 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
       `)
       .eq('teacher_id', teacherId)
       .order('created_at', { ascending: false });
-
     if (error) throw error;
     return data || [];
   } catch (error) {
@@ -368,7 +317,6 @@ export const getQuizAssignmentDetails = async (teacherId: string) => {
   }
 };
 
-// Function to unassign a quiz from students
 export const unassignQuizFromStudents = async (quizId: string, studentIds: string[]): Promise<void> => {
   try {
     const { error } = await supabase
@@ -376,8 +324,7 @@ export const unassignQuizFromStudents = async (quizId: string, studentIds: strin
       .delete()
       .eq('quiz_id', quizId)
       .in('student_id', studentIds)
-      .is('completed_at', null); // Only unassign if not completed
-
+      .is('completed_at', null);
     if (error) throw error;
   } catch (error: any) {
     console.error('Error unassigning quiz:', error);
@@ -410,44 +357,31 @@ export const getFlaggedMessagesForTeacher = async (teacherId: string): Promise<F
     return data as FlaggedMessage[];
 };
 
-// Improved student stats function that includes quiz assignment data
 export const getStudentStatsImproved = async (studentId: string) => {
   try {
-    // Count conversations (questions asked)
     const { count: questionCount, error: convError } = await supabase
       .from('conversations')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', studentId)
       .eq('is_deleted', false);
-
     if (convError) throw convError;
-
-    // Get completed quiz assignments (more accurate than old quiz table)
     const { data: completedAssignments, error: assignmentError } = await supabase
       .from('quiz_assignments')
       .select('score, total_questions')
       .eq('student_id', studentId)
       .not('completed_at', 'is', null);
-
     if (assignmentError) throw assignmentError;
-
-    // Fallback to old quiz table for backward compatibility
     const { data: oldQuizzes, error: oldQuizError } = await supabase
       .from('quizzes')
       .select('score, total_questions')
       .eq('user_id', studentId);
-
     if (oldQuizError) throw oldQuizError;
-
-    // Combine both sources
     const allQuizzes = [
       ...(completedAssignments || []),
       ...(oldQuizzes || [])
     ];
-
     const quizAttempts = allQuizzes.length;
     let averageScore = 0;
-
     if (quizAttempts > 0) {
       const totalScore = allQuizzes.reduce((acc, quiz) => {
         const percentage = (quiz.score / quiz.total_questions) * 100;
@@ -455,11 +389,10 @@ export const getStudentStatsImproved = async (studentId: string) => {
       }, 0);
       averageScore = totalScore / quizAttempts;
     }
-
     return {
       questionCount: questionCount ?? 0,
       quizAttempts,
-      averageScore: Math.round(averageScore * 10) / 10 // Round to 1 decimal
+      averageScore: Math.round(averageScore * 10) / 10
     };
   } catch (error) {
     console.error('Error fetching improved student stats:', error);
@@ -494,7 +427,6 @@ export const getAllUsers = async (): Promise<Profile[]> => {
     }
 };
 
-// Admin function to get ALL conversations (including soft-deleted)
 export const getAllConversationsForUser_Admin = async (userId: string): Promise<Conversation[]> => {
   const { data, error } = await supabase
     .from('conversations')
@@ -509,7 +441,6 @@ export const getAllConversationsForUser_Admin = async (userId: string): Promise<
   })) as Conversation[];
 };
 
-// Hard delete for admins only
 export const permanentDeleteConversation = async (id: string): Promise<void> => {
   const adminClient = getAdminClient();
   const { error } = await adminClient.from('conversations').delete().eq('id', id);
@@ -529,14 +460,10 @@ export const createUser = async (userData: { email: string; password: string; fu
       email_confirm: true,
       user_metadata: { full_name: userData.full_name.trim(), role: userData.role }
     });
-
     if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
     if (!authData.user) throw new Error('User creation succeeded but no user data returned');
-
     await new Promise(resolve => setTimeout(resolve, 1500));
-
     return authData.user;
-
   } catch (error: any) {
     if (error.message?.includes('already registered')) throw new Error('A user with this email address already exists');
     throw new Error(error.message || 'Failed to create user');
@@ -553,18 +480,14 @@ export const assignTeacherToStudent = async (teacherId: string, studentId: strin
       .update({ teacher_id: teacherId })
       .eq('id', studentId);
     if (error) throw new Error(`Failed to assign teacher: ${error.message}`);
-
   } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred while assigning the teacher.');
   }
 };
 
 // =================================================================
-// == START OF NEW FEATURE: STUDENT PROFILES
+// == STUDENT PROFILES
 // =================================================================
-
-// --- STUDENT PROFILE MANAGEMENT ---
-
 export const getStudentProfilesForTeacher = async (teacherId: string): Promise<StudentProfileWithDetails[]> => {
   try {
     const { data, error } = await supabase
@@ -579,7 +502,6 @@ export const getStudentProfilesForTeacher = async (teacherId: string): Promise<S
       .eq('teacher_id', teacherId)
       .eq('is_active', true)
       .order('student_name', { ascending: true });
-
     if (error) throw error;
     return data as StudentProfileWithDetails[];
   } catch (error: any) {
@@ -601,7 +523,6 @@ export const getAllStudentProfiles = async (): Promise<StudentProfileWithDetails
       `)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
-
     if (error) throw error;
     return data as StudentProfileWithDetails[];
   } catch (error: any) {
@@ -619,14 +540,10 @@ export const getStudentProfile = async (studentId: string, teacherId: string): P
       .eq('teacher_id', teacherId)
       .eq('is_active', true)
       .single();
-
     if (error) {
-      if (error.code === 'PGRST116') {
-        return null; // No profile found
-      }
+      if (error.code === 'PGRST116') return null;
       throw error;
     }
-    
     return data as StudentProfile;
   } catch (error: any) {
     console.error('Error fetching student profile:', error);
@@ -641,7 +558,6 @@ export const createStudentProfile = async (profileData: Omit<StudentProfile, 'id
       .insert(profileData)
       .select()
       .single();
-
     if (error) throw error;
     return data as StudentProfile;
   } catch (error: any) {
@@ -661,7 +577,6 @@ export const updateStudentProfile = async (
       .eq('id', profileId)
       .select()
       .single();
-
     if (error) throw error;
     return data as StudentProfile;
   } catch (error: any) {
@@ -672,12 +587,10 @@ export const updateStudentProfile = async (
 
 export const deleteStudentProfile = async (profileId: string): Promise<void> => {
   try {
-    // Soft delete by setting is_active to false
     const { error } = await supabase
       .from('student_profiles')
       .update({ is_active: false })
       .eq('id', profileId);
-
     if (error) throw error;
   } catch (error: any) {
     console.error('Error deleting student profile:', error);
@@ -685,21 +598,14 @@ export const deleteStudentProfile = async (profileId: string): Promise<void> => 
   }
 };
 
-// Function to get the active student profile for a student when chatting
 export const getActiveStudentProfileForChat = async (studentId: string): Promise<StudentProfile | null> => {
   try {
-    // Get the student's assigned teacher
     const { data: studentData, error: studentError } = await supabase
       .from('profiles')
       .select('teacher_id')
       .eq('id', studentId)
       .single();
-
-    if (studentError || !studentData?.teacher_id) {
-      return null; // No assigned teacher
-    }
-
-    // Get the student profile created by their assigned teacher
+    if (studentError || !studentData?.teacher_id) return null;
     return await getStudentProfile(studentId, studentData.teacher_id);
   } catch (error: any) {
     console.error('Error fetching active student profile:', error);
@@ -707,50 +613,274 @@ export const getActiveStudentProfileForChat = async (studentId: string): Promise
   }
 };
 
-// Function to generate personalized system prompt with student context
 export const generatePersonalizedPrompt = (studentProfile: StudentProfile, basePrompt: string): string => {
   let personalizedPrompt = basePrompt;
-  
   const studentContext = [];
-  
-  // Add student basic info
   studentContext.push(`The student you're tutoring is ${studentProfile.student_name}`);
-  
-  if (studentProfile.age) {
-    studentContext.push(`who is ${studentProfile.age} years old`);
-  }
-  
-  if (studentProfile.grade_level) {
-    studentContext.push(`and is in ${studentProfile.grade_level}`);
-  }
-  
-  // Add learning characteristics
-  if (studentProfile.learning_strengths) {
-    studentContext.push(`\n\nLEARNING STRENGTHS: ${studentProfile.learning_strengths}`);
-  }
-  
-  if (studentProfile.learning_challenges) {
-    studentContext.push(`\n\nLEARNING CHALLENGES: ${studentProfile.learning_challenges}. Please be especially patient and provide additional support in these areas.`);
-  }
-  
-  if (studentProfile.learning_style) {
-    studentContext.push(`\n\nLEARNING STYLE: ${studentProfile.learning_style}. Adapt your teaching approach to match this style.`);
-  }
-  
-  if (studentProfile.interests) {
-    studentContext.push(`\n\nSTUDENT INTERESTS: ${studentProfile.interests}. Try to connect lessons to these interests when possible.`);
-  }
-  
-  if (studentProfile.custom_context) {
-    studentContext.push(`\n\nADDITIONAL CONTEXT: ${studentProfile.custom_context}`);
-  }
-  
+  if (studentProfile.age) studentContext.push(`who is ${studentProfile.age} years old`);
+  if (studentProfile.grade_level) studentContext.push(`and is in ${studentProfile.grade_level}`);
+  if (studentProfile.learning_strengths) studentContext.push(`\n\nLEARNING STRENGTHS: ${studentProfile.learning_strengths}`);
+  if (studentProfile.learning_challenges) studentContext.push(`\n\nLEARNING CHALLENGES: ${studentProfile.learning_challenges}. Please be especially patient and provide additional support in these areas.`);
+  if (studentProfile.learning_style) studentContext.push(`\n\nLEARNING STYLE: ${studentProfile.learning_style}. Adapt your teaching approach to match this style.`);
+  if (studentProfile.interests) studentContext.push(`\n\nSTUDENT INTERESTS: ${studentProfile.interests}. Try to connect lessons to these interests when possible.`);
+  if (studentProfile.custom_context) studentContext.push(`\n\nADDITIONAL CONTEXT: ${studentProfile.custom_context}`);
   if (studentContext.length > 0) {
     personalizedPrompt += `\n\n--- STUDENT PROFILE ---\n${studentContext.join(' ')}\n\nAdjust your teaching style, examples, and explanations to work best for this specific student. Be encouraging and build on their strengths while providing extra support for their challenges.`;
   }
-  
   return personalizedPrompt;
 };
+
 // =================================================================
-// == END OF NEW FEATURE
+// == TOKEN USAGE TRACKING
 // =================================================================
+export const recordTokenUsage = async (tokenData: Omit<TokenUsage, 'id' | 'created_at'>): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('token_usage')
+      .insert(tokenData);
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error recording token usage:', error);
+    throw error;
+  }
+};
+
+export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Today's stats
+    const { data: todayData, error: todayError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, user_id')
+      .gte('created_at', todayStart);
+    if (todayError) throw todayError;
+
+    const todayStats = {
+      total_tokens: todayData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      input_tokens: todayData?.reduce((sum, row) => sum + (row.input_tokens || 0), 0) || 0,
+      output_tokens: todayData?.reduce((sum, row) => sum + (row.output_tokens || 0), 0) || 0,
+      message_count: todayData?.length || 0,
+      unique_users: new Set(todayData?.map(row => row.user_id) || []).size
+    };
+
+    // Week stats
+    const { data: weekData, error: weekError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, created_at')
+      .gte('created_at', weekAgo);
+    if (weekError) throw weekError;
+
+    const dailyMap = new Map<string, number>();
+    weekData?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      dailyMap.set(date, (dailyMap.get(date) || 0) + (row.total_tokens || 0));
+    });
+
+    let peakDay = '';
+    let peakTokens = 0;
+    dailyMap.forEach((tokens, date) => {
+      if (tokens > peakTokens) {
+        peakTokens = tokens;
+        peakDay = date;
+      }
+    });
+
+    const weekStats = {
+      total_tokens: weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      daily_average: Math.round((weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 7),
+      peak_day: peakDay,
+      peak_tokens: peakTokens
+    };
+
+    // Month stats
+    const { data: monthData, error: monthError } = await supabase
+      .from('token_usage')
+      .select('total_tokens')
+      .gte('created_at', monthAgo);
+    if (monthError) throw monthError;
+
+    const monthStats = {
+      total_tokens: monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      daily_average: Math.round((monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 30)
+    };
+
+    // All-time stats
+    const { data: allTimeData, error: allTimeError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, user_id');
+    if (allTimeError) throw allTimeError;
+
+    const allTimeStats = {
+      total_tokens: allTimeData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      total_messages: allTimeData?.length || 0,
+      total_users: new Set(allTimeData?.map(row => row.user_id) || []).size
+    };
+
+    // Daily history for last 30 days
+    const { data: historyData, error: historyError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, created_at, user_id')
+      .gte('created_at', monthAgo)
+      .order('created_at', { ascending: true });
+    if (historyError) throw historyError;
+
+    const dailyHistory: DailyTokenStats[] = [];
+    const historyMap = new Map<string, { total: number; input: number; output: number; count: number; users: Set<string> }>();
+
+    historyData?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      if (!historyMap.has(date)) {
+        historyMap.set(date, { total: 0, input: 0, output: 0, count: 0, users: new Set() });
+      }
+      const day = historyMap.get(date)!;
+      day.total += row.total_tokens || 0;
+      day.input += row.input_tokens || 0;
+      day.output += row.output_tokens || 0;
+      day.count += 1;
+      day.users.add(row.user_id);
+    });
+
+    historyMap.forEach((stats, date) => {
+      dailyHistory.push({
+        date,
+        total_tokens: stats.total,
+        input_tokens: stats.input,
+        output_tokens: stats.output,
+        message_count: stats.count,
+        unique_users: stats.users.size
+      });
+    });
+
+    // Top users
+    const { data: userData, error: userError } = await supabase
+      .from('token_usage')
+      .select('user_id, total_tokens')
+      .gte('created_at', monthAgo);
+    if (userError) throw userError;
+
+    const userMap = new Map<string, { total: number; count: number }>();
+    userData?.forEach(row => {
+      if (!userMap.has(row.user_id)) {
+        userMap.set(row.user_id, { total: 0, count: 0 });
+      }
+      const user = userMap.get(row.user_id)!;
+      user.total += row.total_tokens || 0;
+      user.count += 1;
+    });
+
+    const topUsersData: UserTokenStats[] = [];
+    for (const [userId, stats] of userMap.entries()) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .single();
+      
+      topUsersData.push({
+        user_id: userId,
+        user_name: profile?.full_name || 'Unknown User',
+        user_email: profile?.email || '',
+        total_tokens: stats.total,
+        message_count: stats.count,
+        avg_tokens_per_message: Math.round(stats.total / stats.count)
+      });
+    }
+
+    topUsersData.sort((a, b) => b.total_tokens - a.total_tokens);
+    const topUsers = topUsersData.slice(0, 10);
+
+    // Model breakdown
+    const { data: modelData, error: modelError } = await supabase
+      .from('token_usage')
+      .select('model, total_tokens')
+      .gte('created_at', monthAgo);
+    if (modelError) throw modelError;
+
+    const modelMap = new Map<string, { total: number; count: number }>();
+    modelData?.forEach(row => {
+      const model = row.model || 'unknown';
+      if (!modelMap.has(model)) {
+        modelMap.set(model, { total: 0, count: 0 });
+      }
+      const m = modelMap.get(model)!;
+      m.total += row.total_tokens || 0;
+      m.count += 1;
+    });
+
+    const totalTokensAllModels = Array.from(modelMap.values()).reduce((sum, m) => sum + m.total, 0);
+    const modelBreakdown: ModelTokenStats[] = [];
+    modelMap.forEach((stats, model) => {
+      modelBreakdown.push({
+        model,
+        total_tokens: stats.total,
+        message_count: stats.count,
+        percentage: totalTokensAllModels > 0 ? Math.round((stats.total / totalTokensAllModels) * 100 * 10) / 10 : 0
+      });
+    });
+
+    modelBreakdown.sort((a, b) => b.total_tokens - a.total_tokens);
+
+    return {
+      today: todayStats,
+      week: weekStats,
+      month: monthStats,
+      all_time: allTimeStats,
+      daily_history: dailyHistory,
+      top_users: topUsers,
+      model_breakdown: modelBreakdown
+    };
+  } catch (error: any) {
+    console.error('Error fetching token analytics:', error);
+    throw error;
+  }
+};
+
+export const getUserTokenUsage = async (userId: string, days: number = 30): Promise<DailyTokenStats[]> => {
+  try {
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    
+    const { data, error } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, created_at')
+      .eq('user_id', userId)
+      .gte('created_at', startDate)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+
+    const dailyMap = new Map<string, { total: number; input: number; output: number; count: number }>();
+    
+    data?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, { total: 0, input: 0, output: 0, count: 0 });
+      }
+      const day = dailyMap.get(date)!;
+      day.total += row.total_tokens || 0;
+      day.input += row.input_tokens || 0;
+      day.output += row.output_tokens || 0;
+      day.count += 1;
+    });
+
+    const dailyHistory: DailyTokenStats[] = [];
+    dailyMap.forEach((stats, date) => {
+      dailyHistory.push({
+        date,
+        total_tokens: stats.total,
+        input_tokens: stats.input,
+        output_tokens: stats.output,
+        message_count: stats.count,
+        unique_users: 1
+      });
+    });
+
+    return dailyHistory;
+  } catch (error: any) {
+    console.error('Error fetching user token usage:', error);
+    throw error;
+  }
+};
