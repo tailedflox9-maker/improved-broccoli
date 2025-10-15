@@ -52,7 +52,6 @@ Remember: You're having a natural conversation about learning, not filling out a
 // Token estimation functions
 function estimateTokens(text: string): number {
   // Rough estimation: ~4 characters per token for English text
-  // This is approximate; actual tokenization varies by model
   return Math.ceil(text.length / 4);
 }
 
@@ -64,12 +63,7 @@ async function* streamOpenAICompatResponse(
   systemPrompt: string
 ): AsyncGenerator<{ chunk: string; tokenData?: { input: number; output: number } }> {
   const messagesWithSystemPrompt = [{ role: 'system', content: systemPrompt }, ...messages];
-  
-  // Estimate input tokens
-  const inputTokens = estimateTokens(
-    systemPrompt + messages.map(m => m.content).join('')
-  );
-  
+  const inputTokens = estimateTokens(systemPrompt + messages.map(m => m.content).join(''));
   let outputText = '';
   
   const response = await fetch(url, {
@@ -97,12 +91,8 @@ async function* streamOpenAICompatResponse(
       if (line.startsWith('data: ')) {
         const data = line.substring(6);
         if (data.trim() === '[DONE]') {
-          // Calculate output tokens
           const outputTokens = estimateTokens(outputText);
-          yield { 
-            chunk: '', 
-            tokenData: { input: inputTokens, output: outputTokens } 
-          };
+          yield { chunk: '', tokenData: { input: inputTokens, output: outputTokens } };
           return;
         }
         try {
@@ -119,12 +109,8 @@ async function* streamOpenAICompatResponse(
     }
   }
   
-  // Final token calculation
   const outputTokens = estimateTokens(outputText);
-  yield { 
-    chunk: '', 
-    tokenData: { input: inputTokens, output: outputTokens } 
-  };
+  yield { chunk: '', tokenData: { input: inputTokens, output: outputTokens } };
 }
 
 class AiService {
@@ -135,9 +121,7 @@ class AiService {
   }
 
   private async generatePersonalizedSystemPrompt(userId?: string): Promise<string> {
-    if (!userId) {
-      return baseSystemPrompt;
-    }
+    if (!userId) return baseSystemPrompt;
     try {
       const studentProfile = await db.getActiveStudentProfileForChat(userId);
       if (studentProfile) {
@@ -149,38 +133,20 @@ class AiService {
     return baseSystemPrompt;
   }
 
+  // *** FIX: This function no longer saves to the DB. It just streams and returns token data. ***
   public async *generateStreamingResponse(
     messages: { role: string; content: string }[],
-    userId: string,
-    messageId: string
+    userId?: string
   ): AsyncGenerator<{ chunk: string; tokenData?: { input: number; output: number; total: number } }> {
     const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
     const systemPrompt = await this.generatePersonalizedSystemPrompt(userId);
     
     let finalTokenData: { input: number; output: number; total: number } | undefined;
     
-    const recordAndFinalize = async (data: { input: number; output: number; total: number }) => {
-      finalTokenData = data;
-      try {
-        await db.recordTokenUsage({
-          user_id: userId,
-          message_id: messageId,
-          model: this.settings.selectedModel,
-          input_tokens: data.input,
-          output_tokens: data.output,
-          total_tokens: data.total
-        });
-        console.log('Token usage recorded successfully for message:', messageId);
-      } catch (error) {
-        console.error('Failed to record token usage:', error);
-      }
-    };
-    
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
         const inputTokens = estimateTokens(systemPrompt + userMessages.map(m => m.content).join(''));
         let outputText = '';
@@ -216,97 +182,54 @@ class AiService {
                 
                 const usageMetadata = json.usageMetadata;
                 if (usageMetadata) {
-                   await recordAndFinalize({
+                  finalTokenData = {
                     input: usageMetadata.promptTokenCount || inputTokens,
                     output: usageMetadata.candidatesTokenCount || estimateTokens(outputText),
                     total: usageMetadata.totalTokenCount || (inputTokens + estimateTokens(outputText))
-                  });
+                  };
                 }
                 
                 if (chunk) {
                   outputText += chunk;
                   yield { chunk };
                 }
-              } catch (e) { 
-                console.error('Error parsing Google stream:', e); 
-              }
+              } catch (e) { console.error('Error parsing Google stream:', e); }
             }
           }
         }
         
         if (!finalTokenData) {
           const outputTokens = estimateTokens(outputText);
-           await recordAndFinalize({
-            input: inputTokens,
-            output: outputTokens,
-            total: inputTokens + outputTokens
-          });
+          finalTokenData = { input: inputTokens, output: outputTokens, total: inputTokens + outputTokens };
         }
         break;
       }
       
-      case 'zhipu': {
-        if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured on the server.');
-        const stream = streamOpenAICompatResponse(
-          'https://open.bigmodel.cn/api/paas/v4/chat/completions', 
-          ZHIPU_API_KEY, 
-          'glm-4-flash', 
-          userMessages, 
-          systemPrompt
-        );
-        for await (const result of stream) {
-          if (result.tokenData) {
-            await recordAndFinalize({
-              input: result.tokenData.input,
-              output: result.tokenData.output,
-              total: result.tokenData.input + result.tokenData.output
-            });
-          } else {
-            yield { chunk: result.chunk };
-          }
-        }
-        break;
-      }
-      
-      case 'mistral-small': {
-        if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        const stream = streamOpenAICompatResponse(
-          'https://api.mistral.ai/v1/chat/completions', 
-          MISTRAL_API_KEY, 
-          'mistral-small-latest', 
-          userMessages, 
-          systemPrompt
-        );
-        for await (const result of stream) {
-          if (result.tokenData) {
-            await recordAndFinalize({
-              input: result.tokenData.input,
-              output: result.tokenData.output,
-              total: result.tokenData.input + result.tokenData.output
-            });
-          } else {
-            yield { chunk: result.chunk };
-          }
-        }
-        break;
-      }
-      
+      case 'zhipu':
+      case 'mistral-small':
       case 'mistral-codestral': {
-        if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
-        const stream = streamOpenAICompatResponse(
-          'https://api.mistral.ai/v1/chat/completions', 
-          MISTRAL_API_KEY, 
-          'codestral-latest', 
-          userMessages, 
-          systemPrompt
-        );
+        const isOpenAICompat = true;
+        let url = '', apiKey = '', model = '';
+        if (this.settings.selectedModel === 'zhipu') {
+            if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured.');
+            url = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+            apiKey = ZHIPU_API_KEY;
+            model = 'glm-4-flash';
+        } else {
+            if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured.');
+            url = 'https://api.mistral.ai/v1/chat/completions';
+            apiKey = MISTRAL_API_KEY;
+            model = this.settings.selectedModel === 'mistral-small' ? 'mistral-small-latest' : 'codestral-latest';
+        }
+
+        const stream = streamOpenAICompatResponse(url, apiKey, model, userMessages, systemPrompt);
         for await (const result of stream) {
           if (result.tokenData) {
-            await recordAndFinalize({
+            finalTokenData = {
               input: result.tokenData.input,
               output: result.tokenData.output,
               total: result.tokenData.input + result.tokenData.output
-            });
+            };
           } else {
             yield { chunk: result.chunk };
           }
@@ -369,7 +292,6 @@ Format as JSON with "questions" array. Each question needs:
 - "explanation": brief explanation of why this answer is correct
 Our conversation:
 ${conversationText.slice(0, 8000)}`;
-    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -423,7 +345,6 @@ Format as JSON with "questions" array. Each question needs:
 - "answer": the correct option (must match exactly)
 - "explanation": brief explanation that helps students learn
 Focus on the most important concepts students need to master about this topic.`;
-    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
