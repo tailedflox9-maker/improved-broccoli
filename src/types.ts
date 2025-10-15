@@ -27,6 +27,10 @@ export interface Message {
   created_at: Date;
   model?: 'google' | 'zhipu' | 'mistral-small' | 'mistral-codestral';
   isEditing?: boolean;
+  // Token tracking
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
 }
 
 export interface Note {
@@ -140,6 +144,76 @@ export interface StudentProfileWithDetails extends StudentProfile {
 // == END OF NEW FEATURE
 // =================================================================
 
+// =================================================================
+// == TOKEN USAGE TRACKING FEATURE
+// =================================================================
+export interface TokenUsage {
+  id: string;
+  user_id: string;
+  message_id: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  created_at: string;
+}
+
+export interface DailyTokenStats {
+  date: string;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  message_count: number;
+  unique_users: number;
+}
+
+export interface UserTokenStats {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  total_tokens: number;
+  message_count: number;
+  avg_tokens_per_message: number;
+}
+
+export interface ModelTokenStats {
+  model: string;
+  total_tokens: number;
+  message_count: number;
+  percentage: number;
+}
+
+export interface TokenAnalytics {
+  today: {
+    total_tokens: number;
+    input_tokens: number;
+    output_tokens: number;
+    message_count: number;
+    unique_users: number;
+  };
+  week: {
+    total_tokens: number;
+    daily_average: number;
+    peak_day: string;
+    peak_tokens: number;
+  };
+  month: {
+    total_tokens: number;
+    daily_average: number;
+  };
+  all_time: {
+    total_tokens: number;
+    total_messages: number;
+    total_users: number;
+  };
+  daily_history: DailyTokenStats[];
+  top_users: UserTokenStats[];
+  model_breakdown: ModelTokenStats[];
+}
+// =================================================================
+// == END TOKEN USAGE TRACKING
+// =================================================================
+
 export type Role = 'student' | 'teacher' | 'admin';
 
 export interface Profile {
@@ -201,17 +275,16 @@ export interface Database {
         Insert: any;
         Update: any;
       }
-      // =================================================================
-      // == START OF NEW FEATURE: STUDENT PROFILES
-      // =================================================================
       student_profiles: {
         Row: StudentProfile;
         Insert: Omit<StudentProfile, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<StudentProfile, 'id' | 'student_id' | 'teacher_id' | 'created_at'>>;
       }
-      // =================================================================
-      // == END OF NEW FEATURE
-      // =================================================================
+      token_usage: {
+        Row: TokenUsage;
+        Insert: Omit<TokenUsage, 'id' | 'created_at'>;
+        Update: Partial<TokenUsage>;
+      }
     }
     Enums: {
       app_role: "student" | "teacher" | "admin"
