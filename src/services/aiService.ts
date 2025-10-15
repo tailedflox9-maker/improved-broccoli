@@ -179,7 +179,8 @@ class AiService {
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
         const inputTokens = estimateTokens(systemPrompt + userMessages.map(m => m.content).join(''));
         let outputText = '';
@@ -368,7 +369,8 @@ Format as JSON with "questions" array. Each question needs:
 - "explanation": brief explanation of why this answer is correct
 Our conversation:
 ${conversationText.slice(0, 8000)}`;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
+    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -421,7 +423,8 @@ Format as JSON with "questions" array. Each question needs:
 - "answer": the correct option (must match exactly)
 - "explanation": brief explanation that helps students learn
 Focus on the most important concepts students need to master about this topic.`;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
+    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
