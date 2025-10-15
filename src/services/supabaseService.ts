@@ -1,5 +1,5 @@
 import { supabase, getAdminClient } from '../supabase';
-import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails, TokenUsage, TokenAnalytics } from '../types';
+import { Profile, Conversation, Note, Quiz, FlaggedMessage, Message, GeneratedQuiz, QuizAssignmentWithDetails, StudentProfile, StudentProfileWithDetails, TokenUsage, TokenAnalytics, DailyTokenStats, UserTokenStats, ModelTokenStats } from '../types';
 
 // --- PROFILE & USER MGMT (NO RPC NEEDED) ---
 export const getProfile = async (): Promise<Profile> => {
@@ -152,7 +152,7 @@ export const createConversation = async (userId: string, title: string): Promise
   return { ...data, created_at: new Date(data.created_at), updated_at: new Date(data.updated_at) } as Conversation;
 };
 
-export const addMessage = async (message: Omit<Message, 'created_at'>): Promise<Message> => {
+export const addMessage = async (message: Omit<Message, 'id' | 'created_at'>): Promise<Message> => {
     const { data, error } = await supabase
         .from('messages')
         .insert(message)
@@ -384,7 +384,6 @@ export const getStudentStatsImproved = async (studentId: string) => {
     let averageScore = 0;
     if (quizAttempts > 0) {
       const totalScore = allQuizzes.reduce((acc, quiz) => {
-        if (!quiz.score || !quiz.total_questions) return acc;
         const percentage = (quiz.score / quiz.total_questions) * 100;
         return acc + percentage;
       }, 0);
@@ -399,6 +398,16 @@ export const getStudentStatsImproved = async (studentId: string) => {
     console.error('Error fetching improved student stats:', error);
     throw error;
   }
+};
+
+export const getStudentStats = async (studentId: string) => {
+  const { count: questionCount, error: convError } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', studentId);
+  if (convError) throw convError;
+  const { data: quizzes, error: quizError } = await supabase.from('quizzes').select('score, total_questions').eq('user_id', studentId);
+  if (quizError) throw quizError;
+  const quizAttempts = quizzes ? quizzes.length : 0;
+  const averageScore = quizAttempts > 0 ? (quizzes.reduce((acc, q) => acc + (q.score / q.total_questions), 0) / quizAttempts) * 100 : 0;
+  return { questionCount: questionCount ?? 0, quizAttempts, averageScore, lastActive: null };
 };
 
 // --- ADMIN PANEL ---
@@ -632,21 +641,246 @@ export const recordTokenUsage = async (tokenData: Omit<TokenUsage, 'id' | 'creat
     if (error) throw error;
   } catch (error: any) {
     console.error('Error recording token usage:', error);
-    // Don't throw error to the user, just log it.
+    throw error;
   }
 };
 
 export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
   try {
-    const { data, error } = await supabase.rpc('get_token_analytics_rpc');
-    if (error) {
-      console.error('Error fetching token analytics via RPC:', error);
-      throw error;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Today's stats
+    const { data: todayData, error: todayError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, user_id')
+      .gte('created_at', todayStart);
+    if (todayError) throw todayError;
+
+    const todayStats = {
+      total_tokens: todayData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      input_tokens: todayData?.reduce((sum, row) => sum + (row.input_tokens || 0), 0) || 0,
+      output_tokens: todayData?.reduce((sum, row) => sum + (row.output_tokens || 0), 0) || 0,
+      message_count: todayData?.length || 0,
+      unique_users: new Set(todayData?.map(row => row.user_id) || []).size
+    };
+
+    // Week stats
+    const { data: weekData, error: weekError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, created_at')
+      .gte('created_at', weekAgo);
+    if (weekError) throw weekError;
+
+    const dailyMap = new Map<string, number>();
+    weekData?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      dailyMap.set(date, (dailyMap.get(date) || 0) + (row.total_tokens || 0));
+    });
+
+    let peakDay = '';
+    let peakTokens = 0;
+    dailyMap.forEach((tokens, date) => {
+      if (tokens > peakTokens) {
+        peakTokens = tokens;
+        peakDay = date;
+      }
+    });
+
+    const weekStats = {
+      total_tokens: weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      daily_average: Math.round((weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 7),
+      peak_day: peakDay,
+      peak_tokens: peakTokens
+    };
+
+    // Month stats
+    const { data: monthData, error: monthError } = await supabase
+      .from('token_usage')
+      .select('total_tokens')
+      .gte('created_at', monthAgo);
+    if (monthError) throw monthError;
+
+    const monthStats = {
+      total_tokens: monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      daily_average: Math.round((monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 30)
+    };
+
+    // All-time stats
+    const { data: allTimeData, error: allTimeError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, user_id');
+    if (allTimeError) throw allTimeError;
+
+    const allTimeStats = {
+      total_tokens: allTimeData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
+      total_messages: allTimeData?.length || 0,
+      total_users: new Set(allTimeData?.map(row => row.user_id) || []).size
+    };
+
+    // Daily history for last 30 days
+    const { data: historyData, error: historyError } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, created_at, user_id')
+      .gte('created_at', monthAgo)
+      .order('created_at', { ascending: true });
+    if (historyError) throw historyError;
+
+    const dailyHistory: DailyTokenStats[] = [];
+    const historyMap = new Map<string, { total: number; input: number; output: number; count: number; users: Set<string> }>();
+
+    historyData?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      if (!historyMap.has(date)) {
+        historyMap.set(date, { total: 0, input: 0, output: 0, count: 0, users: new Set() });
+      }
+      const day = historyMap.get(date)!;
+      day.total += row.total_tokens || 0;
+      day.input += row.input_tokens || 0;
+      day.output += row.output_tokens || 0;
+      day.count += 1;
+      day.users.add(row.user_id);
+    });
+
+    historyMap.forEach((stats, date) => {
+      dailyHistory.push({
+        date,
+        total_tokens: stats.total,
+        input_tokens: stats.input,
+        output_tokens: stats.output,
+        message_count: stats.count,
+        unique_users: stats.users.size
+      });
+    });
+
+    // Top users
+    const { data: userData, error: userError } = await supabase
+      .from('token_usage')
+      .select('user_id, total_tokens')
+      .gte('created_at', monthAgo);
+    if (userError) throw userError;
+
+    const userMap = new Map<string, { total: number; count: number }>();
+    userData?.forEach(row => {
+      if (!userMap.has(row.user_id)) {
+        userMap.set(row.user_id, { total: 0, count: 0 });
+      }
+      const user = userMap.get(row.user_id)!;
+      user.total += row.total_tokens || 0;
+      user.count += 1;
+    });
+
+    const topUsersData: UserTokenStats[] = [];
+    for (const [userId, stats] of userMap.entries()) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', userId)
+        .single();
+      
+      topUsersData.push({
+        user_id: userId,
+        user_name: profile?.full_name || 'Unknown User',
+        user_email: profile?.email || '',
+        total_tokens: stats.total,
+        message_count: stats.count,
+        avg_tokens_per_message: Math.round(stats.total / stats.count)
+      });
     }
-    // The RPC function returns a single JSON object.
-    return data as TokenAnalytics;
+
+    topUsersData.sort((a, b) => b.total_tokens - a.total_tokens);
+    const topUsers = topUsersData.slice(0, 10);
+
+    // Model breakdown
+    const { data: modelData, error: modelError } = await supabase
+      .from('token_usage')
+      .select('model, total_tokens')
+      .gte('created_at', monthAgo);
+    if (modelError) throw modelError;
+
+    const modelMap = new Map<string, { total: number; count: number }>();
+    modelData?.forEach(row => {
+      const model = row.model || 'unknown';
+      if (!modelMap.has(model)) {
+        modelMap.set(model, { total: 0, count: 0 });
+      }
+      const m = modelMap.get(model)!;
+      m.total += row.total_tokens || 0;
+      m.count += 1;
+    });
+
+    const totalTokensAllModels = Array.from(modelMap.values()).reduce((sum, m) => sum + m.total, 0);
+    const modelBreakdown: ModelTokenStats[] = [];
+    modelMap.forEach((stats, model) => {
+      modelBreakdown.push({
+        model,
+        total_tokens: stats.total,
+        message_count: stats.count,
+        percentage: totalTokensAllModels > 0 ? Math.round((stats.total / totalTokensAllModels) * 100 * 10) / 10 : 0
+      });
+    });
+
+    modelBreakdown.sort((a, b) => b.total_tokens - a.total_tokens);
+
+    return {
+      today: todayStats,
+      week: weekStats,
+      month: monthStats,
+      all_time: allTimeStats,
+      daily_history: dailyHistory,
+      top_users: topUsers,
+      model_breakdown: modelBreakdown
+    };
   } catch (error: any) {
-    console.error('An error occurred in getTokenAnalytics:', error);
-    throw new Error('Failed to load token analytics.');
+    console.error('Error fetching token analytics:', error);
+    throw error;
+  }
+};
+
+export const getUserTokenUsage = async (userId: string, days: number = 30): Promise<DailyTokenStats[]> => {
+  try {
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    
+    const { data, error } = await supabase
+      .from('token_usage')
+      .select('total_tokens, input_tokens, output_tokens, created_at')
+      .eq('user_id', userId)
+      .gte('created_at', startDate)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+
+    const dailyMap = new Map<string, { total: number; input: number; output: number; count: number }>();
+    
+    data?.forEach(row => {
+      const date = new Date(row.created_at).toISOString().split('T')[0];
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, { total: 0, input: 0, output: 0, count: 0 });
+      }
+      const day = dailyMap.get(date)!;
+      day.total += row.total_tokens || 0;
+      day.input += row.input_tokens || 0;
+      day.output += row.output_tokens || 0;
+      day.count += 1;
+    });
+
+    const dailyHistory: DailyTokenStats[] = [];
+    dailyMap.forEach((stats, date) => {
+      dailyHistory.push({
+        date,
+        total_tokens: stats.total,
+        input_tokens: stats.input,
+        output_tokens: stats.output,
+        message_count: stats.count,
+        unique_users: 1
+      });
+    });
+
+    return dailyHistory;
+  } catch (error: any) {
+    console.error('Error fetching user token usage:', error);
+    throw error;
   }
 };
