@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react'
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { Conversation, Message } from '../types';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { ChevronDown, Loader2, Sparkles } from 'lucide-react';
 
 interface ChatAreaProps {
   conversation: Conversation | undefined;
@@ -38,6 +38,7 @@ const WelcomeScreen = React.memo(({
   onGenerateQuiz: () => void;
 }) => (
   <div className="chat-area relative">
+    {/* Floating decorative glow elements */}
     <div className="absolute top-10 left-10 w-24 h-24 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
     <div className="absolute bottom-20 right-16 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
     <div className="absolute top-1/2 right-10 w-20 h-20 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -142,18 +143,22 @@ const ScrollToBottomButton = React.memo(({
 
 const MessagesContainer = React.memo(({ 
   messages, 
+  streamingMessage, 
   onSaveAsNote 
 }: {
   messages: Message[];
+  streamingMessage: Message | null;
   onSaveAsNote: (content: string, title?: string) => Promise<void>;
 }) => {
+  const displayMessages = streamingMessage ? [...messages, streamingMessage] : messages;
+  
   return (
     <div className="space-y-4 sm:space-y-6 py-4 sm:py-6">
-      {messages.map((message) => (
+      {displayMessages.map((message, index) => (
         <MessageBubble
-          key={message.id}
+          key={`${message.id}-${index}`}
           message={message}
-          isStreaming={message.isStreaming}
+          isStreaming={streamingMessage?.id === message.id}
           onSaveAsNote={onSaveAsNote}
         />
       ))}
@@ -171,35 +176,39 @@ export function ChatArea({
   onStopGenerating,
   onSaveAsNote,
   onGenerateQuiz,
+  onEditMessage,
+  onRegenerateResponse,
   onLoadMoreMessages,
 }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout>();
   
+  const [displayedMessages, setDisplayedMessages] = useState<Message[]>([]);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentOffset, setCurrentOffset] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const [messageCount, setMessageCount] = useState(0);
 
-  // This is the key fix: Combine saved messages with the live streaming message
   const allMessages = useMemo(() => {
     const baseMessages = conversation?.messages || [];
-    if (streamingMessage) {
-      // Mark the streaming message so MessageBubble can identify it
-      return [...baseMessages, { ...streamingMessage, isStreaming: true }];
-    }
-    return baseMessages;
+    return streamingMessage ? [...baseMessages, streamingMessage] : baseMessages;
   }, [conversation?.messages, streamingMessage]);
 
   useEffect(() => {
-      if(conversation?.messages) {
-          const totalMessages = conversation.messages.length;
-          setHasMoreMessages(totalMessages > MESSAGES_PER_PAGE && totalMessages > messageCount);
-      }
-  }, [conversation?.messages, messageCount]);
-
+    if (conversation) {
+      const messages = conversation.messages || [];
+      const initialMessages = messages.slice(-MESSAGES_PER_PAGE);
+      setDisplayedMessages(initialMessages);
+      setHasMoreMessages(messages.length > MESSAGES_PER_PAGE);
+      setCurrentOffset(Math.max(0, messages.length - MESSAGES_PER_PAGE));
+    } else {
+      setDisplayedMessages([]);
+      setHasMoreMessages(false);
+      setCurrentOffset(0);
+    }
+  }, [conversation]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -214,7 +223,9 @@ export function ChatArea({
     setShowScrollButton(distanceFromBottom > SCROLL_THRESHOLD);
     setIsUserScrolling(distanceFromBottom > 10);
     
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
     
     scrollTimeoutRef.current = setTimeout(() => {
       setIsUserScrolling(false);
@@ -226,22 +237,24 @@ export function ChatArea({
 
     setIsLoadingMore(true);
     try {
-      const offset = conversation.messages?.length || 0;
-      const moreMessages = await onLoadMoreMessages(conversation.id, offset);
-      // The parent component will handle updating the conversation state
-      if (moreMessages.length < MESSAGES_PER_PAGE) {
-          setHasMoreMessages(false);
+      const moreMessages = await onLoadMoreMessages(conversation.id, currentOffset);
+      if (moreMessages.length > 0) {
+        setDisplayedMessages(prev => [...moreMessages, ...prev]);
+        setCurrentOffset(prev => Math.max(0, prev - MESSAGES_PER_PAGE));
+        setHasMoreMessages(currentOffset > MESSAGES_PER_PAGE);
+      } else {
+        setHasMoreMessages(false);
       }
     } catch (error) {
       console.error('Failed to load more messages:', error);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [conversation, onLoadMoreMessages, isLoadingMore, hasMoreMessages]);
+  }, [conversation, onLoadMoreMessages, isLoadingMore, hasMoreMessages, currentOffset]);
 
   useEffect(() => {
     if (!isUserScrolling || streamingMessage) {
-      const timeoutId = setTimeout(() => scrollToBottom('auto'), 100);
+      const timeoutId = setTimeout(() => scrollToBottom(), 100);
       return () => clearTimeout(timeoutId);
     }
   }, [allMessages.length, streamingMessage?.content, scrollToBottom, isUserScrolling]);
@@ -253,7 +266,9 @@ export function ChatArea({
     chatContainer.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       chatContainer.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
     };
   }, [handleScroll]);
 
@@ -283,7 +298,9 @@ export function ChatArea({
       <div
         ref={chatMessagesRef}
         className="chat-messages scroll-container"
-        style={{ scrollBehavior: 'auto' }}
+        style={{ 
+          scrollBehavior: isUserScrolling ? 'auto' : 'smooth'
+        }}
       >
         <div className="chat-messages-container">
           <LoadMoreButton
@@ -293,7 +310,8 @@ export function ChatArea({
           />
           
           <MessagesContainer
-            messages={allMessages}
+            messages={displayedMessages}
+            streamingMessage={streamingMessage}
             onSaveAsNote={onSaveAsNote}
           />
           
@@ -306,7 +324,7 @@ export function ChatArea({
         show={showScrollButton}
       />
 
-      <div className="chat-input-container">
+      <div className="chat-input-container mobile-chat-area">
         <ChatInput
           onSendMessage={onSendMessage}
           isLoading={isLoading}
