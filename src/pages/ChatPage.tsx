@@ -14,6 +14,9 @@ import { aiService } from '../services/aiService';
 import { useAuth } from '../hooks/useAuth';
 import * as db from '../services/supabaseService';
 
+// Helper function to throttle streaming updates for smoother animation
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function ChatPage() {
   const { profile, loading, error } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -43,10 +46,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     aiService.updateSettings(settings);
-  }, [settings]);
+  }, []);
 
   useEffect(() => {
     storageUtils.saveSettings(settings);
+    aiService.updateSettings(settings);
   }, [settings]);
 
   const handleToggleAdminPanel = useCallback(() => {
@@ -73,11 +77,20 @@ export default function ChatPage() {
 
   const createNewConversation = useCallback(async (title: string): Promise<Conversation> => {
     if (!profile) throw new Error("User profile not available.");
-    const newConversation = await db.createConversation(profile.id, title);
-    setConversations(prev => [newConversation, ...prev]);
-    setCurrentConversationId(newConversation.id);
-    handleSwitchToChatView();
-    return newConversation;
+    try {
+      const newConversation = await db.createConversation(profile.id, title);
+      setConversations(prev => [newConversation, ...prev]);
+      setCurrentConversationId(newConversation.id);
+      handleSwitchToChatView();
+      if (window.innerWidth < 1024) {
+        setSidebarOpen(false);
+      }
+      return newConversation;
+    } catch (error) {
+      console.error("Error creating new conversation:", error);
+      alert("Could not create a new conversation. Please try again.");
+      throw error;
+    }
   }, [profile, handleSwitchToChatView]);
 
   const handleNewConversation = useCallback(async () => {
@@ -96,6 +109,8 @@ export default function ChatPage() {
         setNotes(userNotes);
         if (userConversations.length > 0) {
           setCurrentConversationId(userConversations[0].id);
+        } else {
+          setCurrentConversationId(null);
         }
         if (profile.role === 'student') {
           const quizzes = await db.getAssignedQuizzesForStudent(profile.id);
@@ -115,18 +130,29 @@ export default function ChatPage() {
     const currentConvo = conversations.find(c => c.id === currentConversationId);
     if (currentConvo && !currentConvo.messages) {
       const fetchMessages = async () => {
-        const messages = await db.getConversationMessages(currentConversationId);
-        setConversations(prev => prev.map(c =>
-          c.id === currentConversationId ? { ...c, messages } : c
-        ));
+        try {
+          const messages = await db.getConversationMessages(currentConversationId);
+          setConversations(prev => prev.map(c =>
+            c.id === currentConversationId ? { ...c, messages } : c
+          ));
+        } catch (err) {
+          console.error("Failed to fetch messages:", err);
+        }
       };
-      fetchMessages().catch(err => console.error("Failed to fetch messages:", err));
+      fetchMessages();
     }
   }, [currentConversationId, conversations]);
 
   useEffect(() => {
     localStorage.setItem('ai-tutor-sidebar-folded', JSON.stringify(sidebarFolded));
   }, [sidebarFolded]);
+
+  useEffect(() => {
+    const handleResize = () => setSidebarOpen(window.innerWidth >= 1024);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const currentConversation = useMemo(() =>
     conversations.find(c => c.id === currentConversationId),
@@ -144,142 +170,254 @@ export default function ChatPage() {
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
 
-  const handleSelectNote = useCallback((id: string | null) => {
+  const handleSelectNote = useCallback((id: string) => {
     setCurrentNoteId(id);
     setCurrentConversationId(null);
     handleSwitchToChatView();
   }, [handleSwitchToChatView]);
-  
-  // =================================================================
-  // == THIS IS THE MAIN FIX FOR CHAT AND TOKEN USAGE
-  // =================================================================
-  const handleSendMessage = useCallback(async (content: string) => {
-    if (!profile) return;
 
-    let convId = currentConversationId;
-    let isFirstMessageInConv = false;
-    let currentMessages: Message[] = [];
-
-    // If no active conversation, create one first
-    if (!convId) {
-      const newConv = await createNewConversation(generateConversationTitle(content));
-      convId = newConv.id;
-      isFirstMessageInConv = true;
-    } else {
-      currentMessages = conversations.find(c => c.id === convId)?.messages || [];
+  const handleSelectAssignedQuiz = useCallback((assignment: QuizAssignmentWithDetails) => {
+    if (assignment.completed_at) {
+      alert(`You have already completed this quiz. Your score was ${assignment.score}/${assignment.total_questions}.`);
+      return;
     }
+    const session: StudySession = {
+      id: generateId(),
+      conversationId: '',
+      questions: assignment.generated_quizzes.questions,
+      currentQuestionIndex: 0,
+      score: 0,
+      totalQuestions: assignment.generated_quizzes.questions.length,
+      isCompleted: false,
+      createdAt: new Date(),
+      assignmentId: assignment.id,
+    };
+    setCurrentQuizSession(session);
+    setIsQuizModalOpen(true);
+  }, []);
 
+  const handleFinishQuiz = useCallback(async (score: number, totalQuestions: number) => {
+    if (!profile || !currentQuizSession) {
+      setIsQuizModalOpen(false);
+      setCurrentQuizSession(null);
+      return;
+    }
+    try {
+      if (currentQuizSession.assignmentId) {
+        await db.markQuizAsCompleted(currentQuizSession.assignmentId, score, totalQuestions);
+        const updatedQuizzes = await db.getAssignedQuizzesForStudent(profile.id);
+        setAssignedQuizzes(updatedQuizzes);
+        alert(`Assignment submitted successfully! Your score: ${score}/${totalQuestions}`);
+      }
+      else if (currentQuizSession.conversationId) {
+        await db.createQuiz(profile.id, currentQuizSession.conversationId, score, totalQuestions);
+        console.log(`Self-study quiz result saved. Score: ${score}/${totalQuestions}`);
+      }
+    } catch (err) {
+      console.error("Failed to save quiz result:", err);
+      alert("There was an error saving your quiz result.");
+    } finally {
+      setIsQuizModalOpen(false);
+      setCurrentQuizSession(null);
+    }
+  }, [currentQuizSession, profile]);
+
+  const handleSaveAsNote = useCallback(async (content: string, title?: string) => {
+    if (!profile) {
+      console.error("User profile not available for saving note");
+      return;
+    }
+    try {
+      const noteTitle = title || `Note from ${new Date().toLocaleDateString()}`;
+      const newNote = await db.createNote(
+        profile.id,
+        noteTitle,
+        content,
+        currentConversationId || undefined
+      );
+      setNotes(prev => [newNote, ...prev]);
+      console.log("Note saved successfully:", newNote);
+    } catch (error) {
+      console.error("Error saving note:", error);
+      throw error;
+    }
+  }, [profile, currentConversationId]);
+
+  const handleDeleteNote = useCallback(async (noteId: string) => {
+    try {
+      await db.deleteNote(noteId);
+      setNotes(prev => prev.filter(note => note.id !== noteId));
+    } catch (error) {
+      console.error("Error deleting note:", error);
+      alert("Could not delete the note. Please try again.");
+    }
+  }, []);
+
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!profile) {
+      console.error("User profile is not loaded yet.");
+      return;
+    }
+    let conversationToUseId = currentConversationId;
+    if (!conversationToUseId) {
+      try {
+        const newTitle = generateConversationTitle(content);
+        const newConversation = await createNewConversation(newTitle);
+        conversationToUseId = newConversation.id;
+      } catch (err) {
+        console.error("Failed to create a new conversation for the first message:", err);
+        return;
+      }
+    }
     const userMessage: Message = {
       id: generateId(),
-      conversation_id: convId,
+      conversation_id: conversationToUseId,
       user_id: profile.id,
       content,
       role: 'user',
       created_at: new Date()
     };
-    
-    // Optimistically update UI with user's message
-    setConversations(prev => prev.map(c => c.id === convId ? {
-      ...c, messages: [...(c.messages || []), userMessage]
+    setConversations(prev => prev.map(c => c.id === conversationToUseId ? {
+      ...c,
+      messages: [...(c.messages || []), userMessage],
     } : c));
-
     setIsChatLoading(true);
     stopStreamingRef.current = false;
-    
-    // Save user message to DB
-    db.addMessage(userMessage).catch(err => console.error("Failed to save user message:", err));
-    if (!isFirstMessageInConv) {
-        db.updateConversationTimestamp(convId).catch(err => console.error("Failed to update timestamp:", err));
+    db.addMessage({
+      conversation_id: userMessage.conversation_id,
+      user_id: userMessage.user_id,
+      content: userMessage.content,
+      role: userMessage.role,
+    }).catch(err => console.error("Failed to save user message:", err));
+    const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
+    if (isFirstMessage) {
+      const newTitle = generateConversationTitle(content);
+      setConversations(prev => prev.map(c => c.id === conversationToUseId ? {...c, title: newTitle} : c));
+      db.updateConversationTitle(conversationToUseId, newTitle).catch(err => console.error("Failed to update title:", err));
+    } else {
+      db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
     }
-    
-    const assistantMessageId = generateId(); // Generate ID *before* streaming for token tracking
-    
     try {
-      const assistantMessagePlaceholder: Message = {
-        id: assistantMessageId,
-        conversation_id: convId,
+      const assistantMessage: Message = {
+        id: generateId(),
+        conversation_id: conversationToUseId,
         user_id: profile.id,
         content: '',
         role: 'assistant',
         created_at: new Date(),
         model: settings.selectedModel
       };
-      
-      // Use streaming state for the AI response bubble
-      setStreamingMessage(assistantMessagePlaceholder);
-      
-      const messagesForApi = [...currentMessages, userMessage].map(m => ({
+      setStreamingMessage(assistantMessage);
+      const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
+      const messagesForApi = latestMessages.map(m => ({
         role: m.role,
         content: m.content
       }));
-
       let fullResponse = '';
-      let tokenData: { input: number; output: number; total: number } | undefined;
-      
-      for await (const result of aiService.generateStreamingResponse(messagesForApi, profile.id, assistantMessageId)) {
+      let chunkBuffer = '';
+      let lastUpdateTime = Date.now();
+      const UPDATE_INTERVAL = 50; // Update UI every 50ms for smoother animation
+
+      for await (const chunk of aiService.generateStreamingResponse(messagesForApi, profile.id)) {
         if (stopStreamingRef.current) break;
-
-        if (result.chunk) {
-          fullResponse += result.chunk;
+        
+        chunkBuffer += chunk;
+        const now = Date.now();
+        
+        // Throttle updates for smoother animation
+        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+          fullResponse += chunkBuffer;
           setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
+          chunkBuffer = '';
+          lastUpdateTime = now;
+          await sleep(10); // Small delay for smoother rendering
         }
-
-        if (result.tokenData) {
-          tokenData = result.tokenData;
-        }
+      }
+      
+      // Add any remaining buffered content
+      if (chunkBuffer && !stopStreamingRef.current) {
+        fullResponse += chunkBuffer;
+        setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
+        await sleep(20); // Brief pause before finalizing
       }
 
       if (!stopStreamingRef.current && fullResponse.trim()) {
-        const finalAssistantMessage: Message = { 
-          ...assistantMessagePlaceholder, 
-          content: fullResponse,
-          ...(tokenData && {
-            input_tokens: tokenData.input,
-            output_tokens: tokenData.output,
-            total_tokens: tokenData.total,
-          })
-        };
-        
-        // Save final message to database
-        db.addMessage(finalAssistantMessage).catch(err => console.error("Failed to save assistant message:", err));
-        
-        // Add final message to the conversation state
-        setConversations(prev => prev.map(c => c.id === convId ? {
-          ...c, messages: [...(c.messages || []), finalAssistantMessage]
-        } : c));
+        const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
+        db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
+        setConversations(prev => prev.map(c => {
+          if (c.id === conversationToUseId) {
+            const existingMessages = c.messages || [];
+            return { ...c, messages: [...existingMessages, finalAssistantMessage] };
+          }
+          return c;
+        }));
       }
     } catch (error) {
+      console.error('Error generating response:', error);
       const errorContent = `Sorry, an error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`;
       const errorMessage = {
-        id: generateId(), conversation_id: convId, user_id: profile.id,
+        id: generateId(), conversation_id: conversationToUseId, user_id: profile.id,
         role: 'assistant', content: errorContent, created_at: new Date()
       } as Message;
-      
-      setConversations(prev => prev.map(c => c.id === convId ? {
-        ...c, messages: [...(c.messages || []), errorMessage]
-      } : c));
+      setConversations(prev => prev.map(c => {
+        if (c.id === conversationToUseId) {
+          const existingMessages = c.messages || [];
+          return { ...c, messages: [...existingMessages, errorMessage] };
+        }
+        return c;
+      }));
       db.addMessage(errorMessage).catch(err => console.error("Failed to save error message:", err));
     } finally {
       setIsChatLoading(false);
-      setStreamingMessage(null); // Clear the streaming message state
+      setStreamingMessage(null);
       stopStreamingRef.current = false;
     }
   }, [profile, currentConversationId, conversations, settings.selectedModel, createNewConversation]);
-  // =================================================================
-  // == END OF FIX
-  // =================================================================
-
 
   const handleGenerateQuiz = useCallback(async () => {
-    // ... (This function remains unchanged)
+    if (!currentConversation || !currentConversation.messages || currentConversation.messages.length < 2) {
+      console.warn('Need at least 2 messages to generate quiz');
+      return;
+    }
+    setIsQuizLoading(true);
+    try {
+      const quizSession = await aiService.generateQuiz(currentConversation);
+      setCurrentQuizSession(quizSession);
+      setIsQuizModalOpen(true);
+    } catch (error) {
+      console.error('Error generating quiz:', error);
+      alert(`Failed to generate quiz: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsQuizLoading(false);
+    }
   }, [currentConversation]);
 
   const handleDeleteConversation = useCallback(async (id: string) => {
-    // ... (This function remains unchanged)
+    const originalConversations = conversations;
+    const remaining = conversations.filter(c => c.id !== id);
+    setConversations(remaining);
+    if (currentConversationId === id) {
+      setCurrentConversationId(remaining.length > 0 ? remaining[0].id : null);
+    }
+    try {
+      await db.deleteConversation(id);
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+      setConversations(originalConversations);
+      alert("Could not delete the conversation.");
+    }
   }, [conversations, currentConversationId]);
 
   const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
-    // ... (This function remains unchanged)
+    const originalTitle = conversations.find(c => c.id === id)?.title;
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
+    try {
+      await db.updateConversationTitle(id, newTitle);
+    } catch (err) {
+      console.error("Failed to rename conversation:", err);
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: originalTitle || c.title } : c));
+      alert("Could not rename the conversation.");
+    }
   }, [conversations]);
 
   const getActiveView = () => {
@@ -287,9 +425,8 @@ export default function ChatPage() {
     if (showTeacherDashboard) return 'dashboard';
     if (currentNoteId) return 'note';
     return 'chat';
-  };
+  }
 
-  // ... (The rest of the file remains unchanged, including loading/error states and JSX)
   if (loading || (!profile && !error)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-white">
@@ -378,7 +515,7 @@ export default function ChatPage() {
             <button
               onClick={() => {
                 setCurrentNoteId(null);
-                setCurrentConversationId(conversations.length > 0 ? conversations[0].id : null);
+                setCurrentConversationId(conversations[0]?.id || null);
               }}
               className="m-4 flex items-center gap-2 text-sm text-gray-400 hover:text-white"
             >
