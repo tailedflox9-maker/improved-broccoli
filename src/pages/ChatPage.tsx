@@ -258,79 +258,112 @@ export default function ChatPage() {
       console.error("User profile is not loaded yet.");
       return;
     }
+    
     let conversationToUseId = currentConversationId;
+    let isNewConversation = false;
+
     if (!conversationToUseId) {
       try {
         const newTitle = generateConversationTitle(content);
         const newConversation = await createNewConversation(newTitle);
         conversationToUseId = newConversation.id;
+        isNewConversation = true;
       } catch (err) {
         console.error("Failed to create a new conversation for the first message:", err);
         return;
       }
     }
+
     const userMessage: Message = {
       id: generateId(),
       conversation_id: conversationToUseId,
       user_id: profile.id,
       content,
       role: 'user',
-      created_at: new Date()
+      created_at: new Date(),
+      model: settings.selectedModel
     };
+
+    const assistantMessageId = generateId();
+    const assistantMessagePlaceholder: Message = {
+      id: assistantMessageId,
+      conversation_id: conversationToUseId,
+      user_id: profile.id,
+      content: '',
+      role: 'assistant',
+      created_at: new Date(),
+      model: settings.selectedModel,
+    };
+
+    // Update state with user message and assistant placeholder
     setConversations(prev => prev.map(c => c.id === conversationToUseId ? {
       ...c,
-      messages: [...(c.messages || []), userMessage],
+      messages: [...(c.messages || []), userMessage, assistantMessagePlaceholder],
     } : c));
+    
+    setStreamingMessage(assistantMessagePlaceholder);
     setIsChatLoading(true);
     stopStreamingRef.current = false;
+
+    // Save user message to database
     db.addMessage({
       conversation_id: userMessage.conversation_id,
       user_id: userMessage.user_id,
       content: userMessage.content,
       role: userMessage.role,
+      model: userMessage.model
     }).catch(err => console.error("Failed to save user message:", err));
-    const isFirstMessage = (conversations.find(c => c.id === conversationToUseId)?.messages?.length || 0) === 0;
-    if (isFirstMessage) {
+
+    if (isNewConversation) {
       const newTitle = generateConversationTitle(content);
       setConversations(prev => prev.map(c => c.id === conversationToUseId ? {...c, title: newTitle} : c));
       db.updateConversationTitle(conversationToUseId, newTitle).catch(err => console.error("Failed to update title:", err));
     } else {
       db.updateConversationTimestamp(conversationToUseId).catch(err => console.error("Failed to update timestamp:", err));
     }
+
     try {
-      const assistantMessage: Message = {
-        id: generateId(),
-        conversation_id: conversationToUseId,
-        user_id: profile.id,
-        content: '',
-        role: 'assistant',
-        created_at: new Date(),
-        model: settings.selectedModel
-      };
-      setStreamingMessage(assistantMessage);
       const latestMessages = [...(conversations.find(c => c.id === conversationToUseId)?.messages || []), userMessage];
       const messagesForApi = latestMessages.map(m => ({
         role: m.role,
         content: m.content
       }));
+      
       let fullResponse = '';
       let chunkBuffer = '';
       let lastUpdateTime = Date.now();
-      const UPDATE_INTERVAL = 50; // Update UI every 50ms for smoother animation
+      const UPDATE_INTERVAL = 50; 
+      let tokenData: { input: number; output: number; total: number } | undefined;
 
-      for await (const chunk of aiService.generateStreamingResponse(messagesForApi, profile.id)) {
+      // ----------------------------------------------------
+      // UPDATED STREAMING LOGIC FOR TOKEN TRACKING
+      // ----------------------------------------------------
+      for await (const result of aiService.generateStreamingResponse(
+        messagesForApi, 
+        profile.id, // Pass User ID
+        assistantMessageId // Pass Message ID for automatic token recording
+      )) {
         if (stopStreamingRef.current) break;
         
-        chunkBuffer += chunk;
+        if (result.chunk) {
+          chunkBuffer += result.chunk;
+        }
+
+        if (result.tokenData) {
+          // Capture final token data from the stream
+          tokenData = result.tokenData;
+          console.log(`Token data received for message ${assistantMessageId}:`, tokenData);
+        }
+
         const now = Date.now();
         
         // Throttle updates for smoother animation
-        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+        if (chunkBuffer && now - lastUpdateTime >= UPDATE_INTERVAL) {
           fullResponse += chunkBuffer;
           setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
           chunkBuffer = '';
           lastUpdateTime = now;
-          await sleep(10); // Small delay for smoother rendering
+          await sleep(10); 
         }
       }
       
@@ -338,15 +371,29 @@ export default function ChatPage() {
       if (chunkBuffer && !stopStreamingRef.current) {
         fullResponse += chunkBuffer;
         setStreamingMessage(prev => prev ? { ...prev, content: fullResponse } : null);
-        await sleep(20); // Brief pause before finalizing
+        await sleep(20);
       }
-
+      // ----------------------------------------------------
+      
       if (!stopStreamingRef.current && fullResponse.trim()) {
-        const finalAssistantMessage = { ...assistantMessage, content: fullResponse };
-        db.addMessage({ ...finalAssistantMessage, id: undefined, created_at: undefined }).catch(err => console.error("Failed to save assistant message:", err));
+        const finalAssistantMessage: Message = { 
+            ...assistantMessagePlaceholder, 
+            content: fullResponse,
+            // Include token metadata captured at the end of the stream
+            ...(tokenData && {
+              input_tokens: tokenData.input,
+              output_tokens: tokenData.output,
+              total_tokens: tokenData.total,
+            })
+        };
+        
+        // Save final message to database (including token counts)
+        db.addMessage(finalAssistantMessage).catch(err => console.error("Failed to save assistant message:", err));
+        
+        // Update main conversations state (replacing placeholder)
         setConversations(prev => prev.map(c => {
           if (c.id === conversationToUseId) {
-            const existingMessages = c.messages || [];
+            const existingMessages = c.messages?.filter(m => m.id !== assistantMessageId) || [];
             return { ...c, messages: [...existingMessages, finalAssistantMessage] };
           }
           return c;
@@ -359,9 +406,11 @@ export default function ChatPage() {
         id: generateId(), conversation_id: conversationToUseId, user_id: profile.id,
         role: 'assistant', content: errorContent, created_at: new Date()
       } as Message;
+      
+      // Update state to show error message (replacing placeholder if present)
       setConversations(prev => prev.map(c => {
         if (c.id === conversationToUseId) {
-          const existingMessages = c.messages || [];
+          const existingMessages = c.messages?.filter(m => m.id !== assistantMessageId) || [];
           return { ...c, messages: [...existingMessages, errorMessage] };
         }
         return c;
