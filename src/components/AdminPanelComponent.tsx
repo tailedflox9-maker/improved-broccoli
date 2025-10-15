@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import * as db from '../services/supabaseService';
-import { Profile, Conversation, Message, StudentProfileWithDetails } from '../types';
+import { Profile, Conversation, Message, StudentProfileWithDetails, TokenAnalytics } from '../types';
 import {
   PlusCircle,
   UserPlus,
@@ -22,9 +22,16 @@ import {
   UserCog,
   Brain,
   Heart,
-  Lightbulb
+  Lightbulb,
+  Activity,
+  TrendingUp,
+  Zap,
+  BarChart3,
+  Calendar,
+  Users as UsersIcon
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -52,7 +59,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  const [viewMode, setViewMode] = useState<'users' | 'chats'>('users');
+  const [viewMode, setViewMode] = useState<'users' | 'chats' | 'tokens'>('users');
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [userConversations, setUserConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -63,6 +70,11 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const [studentProfiles, setStudentProfiles] = useState<StudentProfileWithDetails[]>([]);
   const [showStudentProfiles, setShowStudentProfiles] = useState(false);
   const [profilesLoading, setProfilesLoading] = useState(false);
+
+  // Token analytics state
+  const [tokenAnalytics, setTokenAnalytics] = useState<TokenAnalytics | null>(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -77,11 +89,24 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     }
   };
 
+  const fetchTokenAnalytics = async () => {
+    setTokenLoading(true);
+    setTokenError(null);
+    try {
+      const analytics = await db.getTokenAnalytics();
+      setTokenAnalytics(analytics);
+    } catch (error: any) {
+      console.error('Error fetching token analytics:', error);
+      setTokenError(error.message || "Failed to load token analytics");
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
   const fetchStudentProfiles = async () => {
     setProfilesLoading(true);
     try {
       const profiles = await db.getAllStudentProfiles();
-      console.log('Fetched student profiles:', profiles);
       setStudentProfiles(profiles);
     } catch (error: any) {
       console.error('Error fetching student profiles:', error);
@@ -93,6 +118,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
 
   useEffect(() => {
     fetchUsers();
+    fetchTokenAnalytics();
   }, []);
 
   useEffect(() => {
@@ -118,7 +144,6 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
-
     if (!email.trim() || !password.trim() || password.length < 6 || !fullName.trim()) {
       setCreateError("All fields are required and password must be at least 6 characters.");
       return;
@@ -140,7 +165,6 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   const handleAssignStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
-
     if (!selectedStudent || !selectedTeacher || selectedStudent === selectedTeacher) {
       setAssignError("Please select a valid student and a different teacher.");
       return;
@@ -193,19 +217,12 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
   };
 
   const handleSelectConversation = async (conversation: Conversation) => {
-    console.log('Selected conversation:', conversation);
-    console.log('Conversation ID:', conversation.id);
-
     setSelectedConversation(conversation);
     setConversationMessages([]);
     setMessageError(null);
     setChatLoading(true);
-
     try {
       const messages = await db.getConversationMessages_Admin(conversation.id);
-      console.log('Loaded messages count:', messages?.length || 0);
-      console.log('Loaded messages:', messages);
-
       if (messages && messages.length > 0) {
         setConversationMessages(messages);
         setMessageError(null);
@@ -219,7 +236,6 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
       }
     } catch (err: any) {
       console.error('Error loading messages:', err);
-      console.error('Full error object:', err);
       setMessageError(`Failed to load messages: ${err.message || 'Unknown error'}`);
       setConversationMessages([]);
     } finally {
@@ -253,6 +269,283 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     setMessageError(null);
   };
 
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    return num.toString();
+  };
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
+  // Token Analytics View
+  if (viewMode === 'tokens') {
+    return (
+      <div className="h-full overflow-y-auto bg-grid-slate-900">
+        <div className="p-6 space-y-6 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div>
+              <button onClick={handleBackToUsers} className="btn-secondary mb-4">
+                <ArrowLeft size={16}/> Back to Dashboard
+              </button>
+              <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                <Activity size={28} className="text-blue-500" /> Token Usage Analytics
+              </h1>
+              <p className="text-gray-400 mt-1">Monitor AI API usage and track token consumption</p>
+            </div>
+            <button onClick={fetchTokenAnalytics} disabled={tokenLoading} className="btn-secondary">
+              <RefreshCw size={14} className={tokenLoading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+
+          {tokenLoading && !tokenAnalytics && (
+            <div className="text-center p-12">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-4"/>
+              <p className="text-gray-400">Loading token analytics...</p>
+            </div>
+          )}
+
+          {tokenError && (
+            <div className="text-center p-12">
+              <AlertTriangle className="w-12 h-12 mx-auto text-red-500 mb-4"/>
+              <p className="text-red-400 font-semibold mb-2">Error Loading Analytics</p>
+              <p className="text-gray-400">{tokenError}</p>
+              <button onClick={fetchTokenAnalytics} className="mt-4 btn-primary">
+                <RefreshCw size={14}/> Retry
+              </button>
+            </div>
+          )}
+
+          {tokenAnalytics && !tokenLoading && (
+            <>
+              {/* Today's Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
+                <div className="stats-card bg-gradient-to-br from-blue-900/40 to-blue-800/20">
+                  <Zap size={24} className="text-blue-400 mb-3"/>
+                  <p className="text-3xl font-bold text-white">{formatNumber(tokenAnalytics.today.total_tokens)}</p>
+                  <p className="text-gray-400">Tokens Today</p>
+                  <p className="text-xs text-blue-400 mt-1">
+                    {formatNumber(tokenAnalytics.today.input_tokens)} in / {formatNumber(tokenAnalytics.today.output_tokens)} out
+                  </p>
+                </div>
+
+                <div className="stats-card bg-gradient-to-br from-green-900/40 to-green-800/20">
+                  <TrendingUp size={24} className="text-green-400 mb-3"/>
+                  <p className="text-3xl font-bold text-white">{formatNumber(tokenAnalytics.week.total_tokens)}</p>
+                  <p className="text-gray-400">This Week</p>
+                  <p className="text-xs text-green-400 mt-1">
+                    {formatNumber(tokenAnalytics.week.daily_average)} avg/day
+                  </p>
+                </div>
+
+                <div className="stats-card bg-gradient-to-br from-purple-900/40 to-purple-800/20">
+                  <Calendar size={24} className="text-purple-400 mb-3"/>
+                  <p className="text-3xl font-bold text-white">{formatNumber(tokenAnalytics.month.total_tokens)}</p>
+                  <p className="text-gray-400">This Month</p>
+                  <p className="text-xs text-purple-400 mt-1">
+                    {formatNumber(tokenAnalytics.month.daily_average)} avg/day
+                  </p>
+                </div>
+
+                <div className="stats-card bg-gradient-to-br from-orange-900/40 to-orange-800/20">
+                  <BarChart3 size={24} className="text-orange-400 mb-3"/>
+                  <p className="text-3xl font-bold text-white">{tokenAnalytics.today.message_count}</p>
+                  <p className="text-gray-400">Messages Today</p>
+                  <p className="text-xs text-orange-400 mt-1">
+                    {tokenAnalytics.today.unique_users} active users
+                  </p>
+                </div>
+
+                <div className="stats-card bg-gradient-to-br from-pink-900/40 to-pink-800/20">
+                  <UsersIcon size={24} className="text-pink-400 mb-3"/>
+                  <p className="text-3xl font-bold text-white">{formatNumber(tokenAnalytics.all_time.total_tokens)}</p>
+                  <p className="text-gray-400">All Time</p>
+                  <p className="text-xs text-pink-400 mt-1">
+                    {tokenAnalytics.all_time.total_messages} messages
+                  </p>
+                </div>
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Daily Usage Chart */}
+                <div className="admin-card">
+                  <h3 className="card-header flex items-center gap-2">
+                    <TrendingUp size={18}/> Daily Token Usage (Last 30 Days)
+                  </h3>
+                  <div className="p-6">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={tokenAnalytics.daily_history}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#9ca3af"
+                          tick={{ fill: '#9ca3af' }}
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        />
+                        <YAxis 
+                          stroke="#9ca3af"
+                          tick={{ fill: '#9ca3af' }}
+                          tickFormatter={(value) => formatNumber(value)}
+                        />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                          labelStyle={{ color: '#fff' }}
+                          itemStyle={{ color: '#3b82f6' }}
+                          formatter={(value: any) => formatNumber(value)}
+                        />
+                        <Legend wrapperStyle={{ color: '#9ca3af' }} />
+                        <Line type="monotone" dataKey="total_tokens" stroke="#3b82f6" strokeWidth={2} name="Total Tokens" dot={{ fill: '#3b82f6', r: 3 }} />
+                        <Line type="monotone" dataKey="input_tokens" stroke="#10b981" strokeWidth={1.5} name="Input" dot={{ fill: '#10b981', r: 2 }} />
+                        <Line type="monotone" dataKey="output_tokens" stroke="#f59e0b" strokeWidth={1.5} name="Output" dot={{ fill: '#f59e0b', r: 2 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Model Distribution */}
+                <div className="admin-card">
+                  <h3 className="card-header flex items-center gap-2">
+                    <BarChart3 size={18}/> Model Usage Distribution
+                  </h3>
+                  <div className="p-6">
+                    {tokenAnalytics.model_breakdown.length > 0 ? (
+                      <div className="space-y-4">
+                        <ResponsiveContainer width="100%" height={200}>
+                          <PieChart>
+                            <Pie
+                              data={tokenAnalytics.model_breakdown}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={({ model, percentage }) => `${model}: ${percentage}%`}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="total_tokens"
+                            >
+                              {tokenAnalytics.model_breakdown.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                              formatter={(value: any) => formatNumber(value)}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="grid grid-cols-1 gap-2">
+                          {tokenAnalytics.model_breakdown.map((model, index) => (
+                            <div key={model.model} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="w-4 h-4 rounded" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                                <span className="text-white font-semibold capitalize">{model.model}</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-white font-bold">{formatNumber(model.total_tokens)}</p>
+                                <p className="text-xs text-gray-400">{model.message_count} messages</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-gray-400">
+                        <BarChart3 size={48} className="mx-auto mb-4 opacity-50" />
+                        <p>No model usage data available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Users Table */}
+              <div className="admin-card">
+                <h3 className="card-header flex items-center gap-2">
+                  <Users size={18}/> Top Users by Token Usage (Last 30 Days)
+                </h3>
+                {tokenAnalytics.top_users.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-gray-400">
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="table-header text-left">Rank</th>
+                          <th className="table-header text-left">User</th>
+                          <th className="table-header text-right">Total Tokens</th>
+                          <th className="table-header text-right">Messages</th>
+                          <th className="table-header text-right">Avg per Message</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--color-border)]">
+                        {tokenAnalytics.top_users.map((user, index) => (
+                          <tr key={user.user_id} className="hover:bg-white/5">
+                            <td className="p-4">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                                index === 0 ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-500/30' :
+                                index === 1 ? 'bg-gray-700/40 text-gray-300 border border-gray-500/30' :
+                                index === 2 ? 'bg-orange-900/40 text-orange-400 border border-orange-500/30' :
+                                'bg-gray-800 text-gray-500'
+                              }`}>
+                                {index + 1}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div>
+                                <p className="font-semibold text-white">{user.user_name}</p>
+                                <p className="text-xs text-gray-400">{user.user_email}</p>
+                              </div>
+                            </td>
+                            <td className="p-4 text-right">
+                              <p className="text-lg font-bold text-blue-400">{formatNumber(user.total_tokens)}</p>
+                            </td>
+                            <td className="p-4 text-right">
+                              <p className="text-white font-semibold">{user.message_count}</p>
+                            </td>
+                            <td className="p-4 text-right">
+                              <p className="text-gray-300">{formatNumber(user.avg_tokens_per_message)}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center p-12 text-gray-500">
+                    <Users size={48} className="mx-auto mb-4 opacity-50" />
+                    <p>No user data available</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Peak Usage Info */}
+              {tokenAnalytics.week.peak_day && (
+                <div className="admin-card bg-gradient-to-br from-indigo-900/20 to-purple-900/20 border-indigo-500/30">
+                  <div className="p-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center border-2 border-indigo-500/40">
+                        <TrendingUp size={32} className="text-indigo-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-white mb-1">Peak Usage Day</h3>
+                        <p className="text-gray-300">
+                          <span className="text-indigo-400 font-bold">
+                            {new Date(tokenAnalytics.week.peak_day).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                          </span>
+                          {' '}had the highest usage this week with{' '}
+                          <span className="text-indigo-400 font-bold">{formatNumber(tokenAnalytics.week.peak_tokens)}</span>
+                          {' '}tokens consumed
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Chat View
   if (viewMode === 'chats' && selectedUser) {
     return (
       <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full">
@@ -321,7 +614,17 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                       <div key={msg.id} className={`p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-gray-800' : 'bg-gray-700'}`}>
                         <p className={`font-bold capitalize ${msg.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>{msg.role}</p>
                         <p className="text-white whitespace-pre-wrap mt-1">{msg.content}</p>
-                        <p className="text-xs text-gray-500 text-right mt-2">{formatDate(new Date(msg.created_at))}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-xs text-gray-500">{formatDate(new Date(msg.created_at))}</p>
+                          {msg.total_tokens && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-blue-400">{msg.total_tokens} tokens</span>
+                              {msg.input_tokens && msg.output_tokens && (
+                                <span className="text-gray-500">({msg.input_tokens} in / {msg.output_tokens} out)</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -334,6 +637,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
     );
   }
 
+  // Main Dashboard View
   return (
     <div className="h-full overflow-y-auto bg-grid-slate-900">
       <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -342,9 +646,14 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                 <h1 className="text-3xl font-bold text-white flex items-center gap-3"><Shield size={28} className="text-blue-500" /> Admin Dashboard</h1>
                 <p className="text-gray-400 mt-1">Global management of users and assignments.</p>
             </div>
-            <button onClick={fetchUsers} disabled={loading} className="btn-secondary">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-            </button>
+            <div className="flex gap-3">
+              <button onClick={() => setViewMode('tokens')} className="btn-primary">
+                <Activity size={16}/> View Token Analytics
+              </button>
+              <button onClick={fetchUsers} disabled={loading} className="btn-secondary">
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             <div className="stats-card"><Users size={24} className="text-blue-500 mb-3"/><p className="text-3xl font-bold">{users.length}</p><p className="text-gray-400">Total Users</p></div>
@@ -352,6 +661,42 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
             <div className="stats-card"><GraduationCap size={24} className="text-blue-400 mb-3"/><p className="text-3xl font-bold">{teachers.length}</p><p className="text-gray-400">Teachers</p></div>
             <div className="stats-card"><Shield size={24} className="text-red-500 mb-3"/><p className="text-3xl font-bold">{admins.length}</p><p className="text-gray-400">Admins</p></div>
         </div>
+
+        {/* Quick Token Stats */}
+        {tokenAnalytics && (
+          <div className="admin-card bg-gradient-to-br from-blue-900/20 to-indigo-900/20 border-blue-500/30">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Zap size={20} className="text-blue-400" />
+                  Token Usage Today
+                </h3>
+                <button onClick={() => setViewMode('tokens')} className="text-sm text-blue-400 hover:text-blue-300 font-semibold">
+                  View Full Analytics →
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-black/20 rounded-lg p-4 border border-white/10">
+                  <p className="text-2xl font-bold text-white">{formatNumber(tokenAnalytics.today.total_tokens)}</p>
+                  <p className="text-sm text-gray-400">Total Tokens</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-white/10">
+                  <p className="text-2xl font-bold text-white">{tokenAnalytics.today.message_count}</p>
+                  <p className="text-sm text-gray-400">Messages</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-white/10">
+                  <p className="text-2xl font-bold text-white">{tokenAnalytics.today.unique_users}</p>
+                  <p className="text-sm text-gray-400">Active Users</p>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-white/10">
+                  <p className="text-2xl font-bold text-white">{formatNumber(tokenAnalytics.week.total_tokens)}</p>
+                  <p className="text-sm text-gray-400">This Week</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1 space-y-6">
                 <div className="admin-card">
