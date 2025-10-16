@@ -162,9 +162,6 @@ export const addMessage = async (message: Omit<Message, 'id' | 'created_at'>): P
     return { ...data, created_at: new Date(data.created_at) } as Message;
 };
 
-// =====================================================
-// TOKEN TRACKING: UPDATE MESSAGE WITH TOKEN COUNTS
-// =====================================================
 export const updateMessageTokens = async (
   messageId: string, 
   inputTokens: number, 
@@ -190,8 +187,6 @@ export const updateMessageTokens = async (
     console.log('[Token Update] ✓ Message tokens updated successfully');
   } catch (error: any) {
     console.error('[Token Update] Failed to update message tokens:', error);
-    // Don't throw - we don't want to break the chat if token update fails
-    // The data is still recorded in token_usage table
   }
 };
 
@@ -664,39 +659,68 @@ export const generatePersonalizedPrompt = (studentProfile: StudentProfile, baseP
 };
 
 // =================================================================
-// == TOKEN USAGE TRACKING
+// == TOKEN USAGE TRACKING - UPDATED VERSION
 // =================================================================
 export const recordTokenUsage = async (tokenData: Omit<TokenUsage, 'id' | 'created_at'>): Promise<void> => {
   try {
-    console.log('[Token Recording] Saving token usage to database:', tokenData);
-    const { error } = await supabase
+    console.log('[Token Recording] Attempting to save token usage:', tokenData);
+    
+    if (!tokenData.user_id || !tokenData.message_id || !tokenData.model) {
+      throw new Error('Missing required fields for token usage');
+    }
+
+    if (tokenData.total_tokens <= 0) {
+      console.warn('[Token Recording] Total tokens is 0 or negative, skipping insert');
+      return;
+    }
+
+    const { data, error } = await supabase
       .from('token_usage')
-      .insert(tokenData);
+      .insert({
+        user_id: tokenData.user_id,
+        message_id: tokenData.message_id,
+        model: tokenData.model,
+        input_tokens: tokenData.input_tokens || 0,
+        output_tokens: tokenData.output_tokens || 0,
+        total_tokens: tokenData.total_tokens || 0
+      })
+      .select()
+      .single();
+    
     if (error) {
       console.error('[Token Recording] Database error:', error);
+      console.error('[Token Recording] Failed data:', tokenData);
       throw error;
     }
-    console.log('[Token Recording] ✓ Successfully saved to database');
+    
+    console.log('[Token Recording] ✓ Successfully saved to database:', data);
   } catch (error: any) {
     console.error('[Token Recording] Failed to record token usage:', error);
-    throw error;
+    console.error('[Token Recording] ❌ CRITICAL: Token tracking failed!');
   }
 };
 
 export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
   try {
-    console.log('[Token Analytics] Fetching analytics data...');
+    console.log('[Token Analytics] Starting to fetch analytics data...');
+    
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Today's stats
+    console.log('[Token Analytics] Fetching today\'s stats...');
     const { data: todayData, error: todayError } = await supabase
       .from('token_usage')
       .select('total_tokens, input_tokens, output_tokens, user_id')
       .gte('created_at', todayStart);
-    if (todayError) throw todayError;
+    
+    if (todayError) {
+      console.error('[Token Analytics] Error fetching today\'s data:', todayError);
+      throw todayError;
+    }
+
+    console.log('[Token Analytics] Today\'s raw data:', todayData?.length || 0, 'records');
 
     const todayStats = {
       total_tokens: todayData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
@@ -706,12 +730,20 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       unique_users: new Set(todayData?.map(row => row.user_id) || []).size
     };
 
-    // Week stats
+    console.log('[Token Analytics] Today\'s stats:', todayStats);
+
+    console.log('[Token Analytics] Fetching week\'s stats...');
     const { data: weekData, error: weekError } = await supabase
       .from('token_usage')
       .select('total_tokens, created_at')
       .gte('created_at', weekAgo);
-    if (weekError) throw weekError;
+    
+    if (weekError) {
+      console.error('[Token Analytics] Error fetching week data:', weekError);
+      throw weekError;
+    }
+
+    console.log('[Token Analytics] Week raw data:', weekData?.length || 0, 'records');
 
     const dailyMap = new Map<string, number>();
     weekData?.forEach(row => {
@@ -728,30 +760,48 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       }
     });
 
+    const weekTotal = weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0;
     const weekStats = {
-      total_tokens: weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
-      daily_average: Math.round((weekData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 7),
+      total_tokens: weekTotal,
+      daily_average: Math.round(weekTotal / 7),
       peak_day: peakDay,
       peak_tokens: peakTokens
     };
 
-    // Month stats
+    console.log('[Token Analytics] Week stats:', weekStats);
+
+    console.log('[Token Analytics] Fetching month\'s stats...');
     const { data: monthData, error: monthError } = await supabase
       .from('token_usage')
       .select('total_tokens')
       .gte('created_at', monthAgo);
-    if (monthError) throw monthError;
+    
+    if (monthError) {
+      console.error('[Token Analytics] Error fetching month data:', monthError);
+      throw monthError;
+    }
 
+    console.log('[Token Analytics] Month raw data:', monthData?.length || 0, 'records');
+
+    const monthTotal = monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0;
     const monthStats = {
-      total_tokens: monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
-      daily_average: Math.round((monthData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0) / 30)
+      total_tokens: monthTotal,
+      daily_average: Math.round(monthTotal / 30)
     };
 
-    // All-time stats
+    console.log('[Token Analytics] Month stats:', monthStats);
+
+    console.log('[Token Analytics] Fetching all-time stats...');
     const { data: allTimeData, error: allTimeError } = await supabase
       .from('token_usage')
       .select('total_tokens, user_id');
-    if (allTimeError) throw allTimeError;
+    
+    if (allTimeError) {
+      console.error('[Token Analytics] Error fetching all-time data:', allTimeError);
+      throw allTimeError;
+    }
+
+    console.log('[Token Analytics] All-time raw data:', allTimeData?.length || 0, 'records');
 
     const allTimeStats = {
       total_tokens: allTimeData?.reduce((sum, row) => sum + (row.total_tokens || 0), 0) || 0,
@@ -759,16 +809,28 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       total_users: new Set(allTimeData?.map(row => row.user_id) || []).size
     };
 
-    // Daily history for last 30 days
+    console.log('[Token Analytics] All-time stats:', allTimeStats);
+
+    console.log('[Token Analytics] Building daily history...');
     const { data: historyData, error: historyError } = await supabase
       .from('token_usage')
       .select('total_tokens, input_tokens, output_tokens, created_at, user_id')
       .gte('created_at', monthAgo)
       .order('created_at', { ascending: true });
-    if (historyError) throw historyError;
+    
+    if (historyError) {
+      console.error('[Token Analytics] Error fetching history:', historyError);
+      throw historyError;
+    }
 
     const dailyHistory: DailyTokenStats[] = [];
-    const historyMap = new Map<string, { total: number; input: number; output: number; count: number; users: Set<string> }>();
+    const historyMap = new Map<string, { 
+      total: number; 
+      input: number; 
+      output: number; 
+      count: number; 
+      users: Set<string> 
+    }>();
 
     historyData?.forEach(row => {
       const date = new Date(row.created_at).toISOString().split('T')[0];
@@ -794,12 +856,18 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       });
     });
 
-    // Top users
+    console.log('[Token Analytics] Daily history:', dailyHistory.length, 'days');
+
+    console.log('[Token Analytics] Calculating top users...');
     const { data: userData, error: userError } = await supabase
       .from('token_usage')
       .select('user_id, total_tokens')
       .gte('created_at', monthAgo);
-    if (userError) throw userError;
+    
+    if (userError) {
+      console.error('[Token Analytics] Error fetching user data:', userError);
+      throw userError;
+    }
 
     const userMap = new Map<string, { total: number; count: number }>();
     userData?.forEach(row => {
@@ -832,12 +900,18 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
     topUsersData.sort((a, b) => b.total_tokens - a.total_tokens);
     const topUsers = topUsersData.slice(0, 10);
 
-    // Model breakdown
+    console.log('[Token Analytics] Top users:', topUsers.length);
+
+    console.log('[Token Analytics] Calculating model breakdown...');
     const { data: modelData, error: modelError } = await supabase
       .from('token_usage')
       .select('model, total_tokens')
       .gte('created_at', monthAgo);
-    if (modelError) throw modelError;
+    
+    if (modelError) {
+      console.error('[Token Analytics] Error fetching model data:', modelError);
+      throw modelError;
+    }
 
     const modelMap = new Map<string, { total: number; count: number }>();
     modelData?.forEach(row => {
@@ -857,15 +931,17 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
         model,
         total_tokens: stats.total,
         message_count: stats.count,
-        percentage: totalTokensAllModels > 0 ? Math.round((stats.total / totalTokensAllModels) * 100 * 10) / 10 : 0
+        percentage: totalTokensAllModels > 0 
+          ? Math.round((stats.total / totalTokensAllModels) * 100 * 10) / 10 
+          : 0
       });
     });
 
     modelBreakdown.sort((a, b) => b.total_tokens - a.total_tokens);
 
-    console.log('[Token Analytics] ✓ Analytics data fetched successfully');
+    console.log('[Token Analytics] Model breakdown:', modelBreakdown);
 
-    return {
+    const finalAnalytics = {
       today: todayStats,
       week: weekStats,
       month: monthStats,
@@ -874,8 +950,24 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       top_users: topUsers,
       model_breakdown: modelBreakdown
     };
+
+    console.log('[Token Analytics] ✓ Analytics data complete!');
+    console.log('[Token Analytics] Summary:', {
+      todayTotal: todayStats.total_tokens,
+      weekTotal: weekStats.total_tokens,
+      monthTotal: monthStats.total_tokens,
+      allTimeTotal: allTimeStats.total_tokens
+    });
+
+    return finalAnalytics;
   } catch (error: any) {
-    console.error('[Token Analytics] Error fetching analytics:', error);
+    console.error('[Token Analytics] ❌ CRITICAL ERROR fetching analytics:', error);
+    console.error('[Token Analytics] Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
     throw error;
   }
 };
@@ -893,7 +985,12 @@ export const getUserTokenUsage = async (userId: string, days: number = 30): Prom
     
     if (error) throw error;
 
-    const dailyMap = new Map<string, { total: number; input: number; output: number; count: number }>();
+    const dailyMap = new Map<string, { 
+      total: number; 
+      input: number; 
+      output: number; 
+      count: number 
+    }>();
     
     data?.forEach(row => {
       const date = new Date(row.created_at).toISOString().split('T')[0];
@@ -921,7 +1018,7 @@ export const getUserTokenUsage = async (userId: string, days: number = 30): Prom
 
     return dailyHistory;
   } catch (error: any) {
-    console.error('Error fetching user token usage:', error);
+    console.error('[Token Usage] Error fetching user token usage:', error);
     throw error;
   }
 };
