@@ -889,11 +889,11 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       
       topUsersData.push({
         user_id: userId,
-        user_name: profile?.full_name || 'Unknown User',
-        user_email: profile?.email || '',
+        user_name: profile?.full_name || profile?.email || 'Unknown User',
+        user_email: profile?.email || 'N/A',
         total_tokens: stats.total,
         message_count: stats.count,
-        avg_tokens_per_message: Math.round(stats.total / stats.count)
+        avg_tokens_per_message: Math.round(stats.total / stats.count) || 0
       });
     }
 
