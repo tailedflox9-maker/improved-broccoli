@@ -233,15 +233,14 @@ class AiService {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
         
-        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
+        const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
-        // Calculate input tokens
         const inputTokens = calculateMessageTokens(userMessages, systemPrompt);
         console.log(`[Token Tracking] Google - Estimated input tokens: ${inputTokens}`);
         
         let outputText = '';
-        let hasRecordedTokens = false;
-        
+        let finalUsageMetadata: any = null; // Store the last metadata received
+
         const googlePayload = {
           contents: userMessages.map(m => ({ 
             role: m.role === 'assistant' ? 'model' : 'user', 
@@ -283,26 +282,9 @@ class AiService {
                   yield { chunk };
                 }
                 
-                // Check for usage metadata from Google
-                const usageMetadata = json.usageMetadata;
-                if (usageMetadata && !hasRecordedTokens) {
-                  const apiInputTokens = usageMetadata.promptTokenCount || inputTokens;
-                  const apiOutputTokens = usageMetadata.candidatesTokenCount || estimateTokens(outputText);
-                  const apiTotalTokens = usageMetadata.totalTokenCount || (apiInputTokens + apiOutputTokens);
-                  
-                  console.log(`[Token Tracking] Google API provided metadata - Input: ${apiInputTokens}, Output: ${apiOutputTokens}, Total: ${apiTotalTokens}`);
-                  
-                  await recordTokenUsage(apiInputTokens, apiOutputTokens);
-                  hasRecordedTokens = true;
-                  
-                  yield { 
-                    chunk: '', 
-                    tokenData: { 
-                      input: apiInputTokens, 
-                      output: apiOutputTokens, 
-                      total: apiTotalTokens 
-                    } 
-                  };
+                // Always capture the latest usage metadata, which is likely the final one
+                if (json.usageMetadata) {
+                  finalUsageMetadata = json.usageMetadata;
                 }
               } catch (e) { 
                 console.warn('[Token Tracking] Error parsing Google stream:', e);
@@ -311,19 +293,26 @@ class AiService {
           }
         }
         
-        // If we didn't get metadata from the API, use our estimates
-        if (!hasRecordedTokens) {
-          const outputTokens = estimateTokens(outputText);
-          const totalTokens = inputTokens + outputTokens;
-          
-          console.log(`[Token Tracking] Google - Using estimated tokens (no API metadata)`);
-          await recordTokenUsage(inputTokens, outputTokens);
-          
-          yield { 
-            chunk: '', 
-            tokenData: { input: inputTokens, output: outputTokens, total: totalTokens } 
-          };
+        // After the loop, calculate and record tokens using the final data
+        let finalInputTokens = inputTokens;
+        let finalOutputTokens = 0;
+
+        if (finalUsageMetadata) {
+          console.log('[Token Tracking] Google API provided final metadata:', finalUsageMetadata);
+          finalInputTokens = finalUsageMetadata.promptTokenCount || inputTokens;
+          finalOutputTokens = finalUsageMetadata.candidatesTokenCount || estimateTokens(outputText);
+        } else {
+          console.log('[Token Tracking] Google - Using estimated tokens (no API metadata)');
+          finalOutputTokens = estimateTokens(outputText);
         }
+
+        const totalTokens = finalInputTokens + finalOutputTokens;
+        await recordTokenUsage(finalInputTokens, finalOutputTokens);
+        
+        yield { 
+          chunk: '', 
+          tokenData: { input: finalInputTokens, output: finalOutputTokens, total: totalTokens } 
+        };
         break;
       }
       
