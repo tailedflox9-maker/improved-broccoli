@@ -162,6 +162,39 @@ export const addMessage = async (message: Omit<Message, 'id' | 'created_at'>): P
     return { ...data, created_at: new Date(data.created_at) } as Message;
 };
 
+// =====================================================
+// TOKEN TRACKING: UPDATE MESSAGE WITH TOKEN COUNTS
+// =====================================================
+export const updateMessageTokens = async (
+  messageId: string, 
+  inputTokens: number, 
+  outputTokens: number, 
+  totalTokens: number
+): Promise<void> => {
+  try {
+    console.log(`[Token Update] Updating message ${messageId} with tokens: ${totalTokens}`);
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens
+      })
+      .eq('id', messageId);
+    
+    if (error) {
+      console.error('[Token Update] Error updating message tokens:', error);
+      throw error;
+    }
+    
+    console.log('[Token Update] ✓ Message tokens updated successfully');
+  } catch (error: any) {
+    console.error('[Token Update] Failed to update message tokens:', error);
+    // Don't throw - we don't want to break the chat if token update fails
+    // The data is still recorded in token_usage table
+  }
+};
+
 export const updateConversationTitle = async (id: string, title: string) => {
   const { error } = await supabase
     .from('conversations')
@@ -635,18 +668,24 @@ export const generatePersonalizedPrompt = (studentProfile: StudentProfile, baseP
 // =================================================================
 export const recordTokenUsage = async (tokenData: Omit<TokenUsage, 'id' | 'created_at'>): Promise<void> => {
   try {
+    console.log('[Token Recording] Saving token usage to database:', tokenData);
     const { error } = await supabase
       .from('token_usage')
       .insert(tokenData);
-    if (error) throw error;
+    if (error) {
+      console.error('[Token Recording] Database error:', error);
+      throw error;
+    }
+    console.log('[Token Recording] ✓ Successfully saved to database');
   } catch (error: any) {
-    console.error('Error recording token usage:', error);
+    console.error('[Token Recording] Failed to record token usage:', error);
     throw error;
   }
 };
 
 export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
   try {
+    console.log('[Token Analytics] Fetching analytics data...');
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -824,6 +863,8 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
 
     modelBreakdown.sort((a, b) => b.total_tokens - a.total_tokens);
 
+    console.log('[Token Analytics] ✓ Analytics data fetched successfully');
+
     return {
       today: todayStats,
       week: weekStats,
@@ -834,7 +875,7 @@ export const getTokenAnalytics = async (): Promise<TokenAnalytics> => {
       model_breakdown: modelBreakdown
     };
   } catch (error: any) {
-    console.error('Error fetching token analytics:', error);
+    console.error('[Token Analytics] Error fetching analytics:', error);
     throw error;
   }
 };
