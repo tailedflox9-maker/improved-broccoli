@@ -49,11 +49,39 @@ KEEP RESPONSES:
 - Appropriately detailed for the question asked
 Remember: You're having a natural conversation about learning, not filling out a worksheet. Adapt your response style to what the student actually needs, whether that's a quick clarification, detailed explanation, or guided practice.`;
 
-// Token estimation functions
+// Enhanced token estimation with better accuracy
 function estimateTokens(text: string): number {
-  // Rough estimation: ~4 characters per token for English text
-  // This is approximate; actual tokenization varies by model
-  return Math.ceil(text.length / 4);
+  if (!text || text.length === 0) return 0;
+  
+  // More accurate token estimation:
+  // Average ~3.8 characters per token for English
+  // Add extra for code blocks, markdown, special characters
+  let tokenCount = text.length / 3.8;
+  
+  // Adjust for markdown and code
+  const codeBlocks = (text.match(/```[\s\S]*?```/g) || []).length;
+  const inlineCode = (text.match(/`[^`]+`/g) || []).length;
+  tokenCount += (codeBlocks * 5) + (inlineCode * 2);
+  
+  // Adjust for special characters and punctuation
+  const specialChars = (text.match(/[^\w\s]/g) || []).length;
+  tokenCount += specialChars * 0.3;
+  
+  return Math.ceil(tokenCount);
+}
+
+// Calculate tokens for message array
+function calculateMessageTokens(messages: { role: string; content: string }[], systemPrompt: string): number {
+  let total = estimateTokens(systemPrompt);
+  
+  // Add tokens for message structure (role labels, etc.)
+  total += messages.length * 4; // Approximate overhead per message
+  
+  for (const msg of messages) {
+    total += estimateTokens(msg.content);
+  }
+  
+  return total;
 }
 
 async function* streamOpenAICompatResponse(
@@ -65,62 +93,72 @@ async function* streamOpenAICompatResponse(
 ): AsyncGenerator<{ chunk: string; tokenData?: { input: number; output: number } }> {
   const messagesWithSystemPrompt = [{ role: 'system', content: systemPrompt }, ...messages];
   
-  // Estimate input tokens
-  const inputTokens = estimateTokens(
-    systemPrompt + messages.map(m => m.content).join('')
-  );
+  // Calculate input tokens upfront
+  const inputTokens = calculateMessageTokens(messages, systemPrompt);
+  console.log(`[Token Tracking] Estimated input tokens: ${inputTokens}`);
   
   let outputText = '';
+  let streamComplete = false;
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages: messagesWithSystemPrompt, stream: true }),
-  });
-  
-  if (!response.ok || !response.body) {
-    const errorBody = await response.text();
-    throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorBody}`);
-  }
-  
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.substring(6);
-        if (data.trim() === '[DONE]') {
-          // Calculate output tokens
-          const outputTokens = estimateTokens(outputText);
-          yield { 
-            chunk: '', 
-            tokenData: { input: inputTokens, output: outputTokens } 
-          };
-          return;
-        }
-        try {
-          const json = JSON.parse(data);
-          const chunk = json.choices?.[0]?.delta?.content;
-          if (chunk) {
-            outputText += chunk;
-            yield { chunk };
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: messagesWithSystemPrompt, stream: true }),
+    });
+    
+    if (!response.ok || !response.body) {
+      const errorBody = await response.text();
+      throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorBody}`);
+    }
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        streamComplete = true;
+        break;
+      }
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.substring(6).trim();
+          if (data === '[DONE]') {
+            streamComplete = true;
+            break;
           }
-        } catch (e) { 
-          console.error('Error parsing stream chunk:', e, 'Raw data:', data); 
+          try {
+            const json = JSON.parse(data);
+            const chunk = json.choices?.[0]?.delta?.content;
+            if (chunk) {
+              outputText += chunk;
+              yield { chunk };
+            }
+          } catch (e) { 
+            console.warn('[Token Tracking] Error parsing stream chunk:', e);
+          }
         }
       }
+      
+      if (streamComplete) break;
     }
+  } catch (error) {
+    console.error('[Token Tracking] Stream error:', error);
+    throw error;
   }
   
-  // Final token calculation
+  // Calculate final output tokens
   const outputTokens = estimateTokens(outputText);
+  console.log(`[Token Tracking] Estimated output tokens: ${outputTokens}, total output length: ${outputText.length} chars`);
+  
+  // Yield final token data
   yield { 
     chunk: '', 
     tokenData: { input: inputTokens, output: outputTokens } 
@@ -157,36 +195,58 @@ class AiService {
     const userMessages = messages.map(m => ({ role: m.role, content: m.content }));
     const systemPrompt = await this.generatePersonalizedSystemPrompt(userId);
     
-    let finalTokenData: { input: number; output: number; total: number } | undefined;
+    console.log(`[Token Tracking] Starting streaming response for message ${messageId}, model: ${this.settings.selectedModel}`);
     
-    const recordAndFinalize = async (data: { input: number; output: number; total: number }) => {
-      finalTokenData = data;
+    let tokenDataRecorded = false;
+    
+    const recordTokenUsage = async (inputTokens: number, outputTokens: number) => {
+      if (tokenDataRecorded) {
+        console.log('[Token Tracking] Token usage already recorded, skipping duplicate');
+        return;
+      }
+      
+      const totalTokens = inputTokens + outputTokens;
+      console.log(`[Token Tracking] Recording token usage - Input: ${inputTokens}, Output: ${outputTokens}, Total: ${totalTokens}`);
+      
       try {
         await db.recordTokenUsage({
           user_id: userId,
           message_id: messageId,
           model: this.settings.selectedModel,
-          input_tokens: data.input,
-          output_tokens: data.output,
-          total_tokens: data.total
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: totalTokens
         });
-        console.log('Token usage recorded successfully for message:', messageId);
+        console.log('[Token Tracking] ✓ Token usage recorded successfully');
+        tokenDataRecorded = true;
+        
+        // Also update the message record with token counts
+        await db.updateMessageTokens(messageId, inputTokens, outputTokens, totalTokens);
+        console.log('[Token Tracking] ✓ Message tokens updated successfully');
+        
       } catch (error) {
-        console.error('Failed to record token usage:', error);
+        console.error('[Token Tracking] ✗ Failed to record token usage:', error);
       }
     };
     
     switch (this.settings.selectedModel) {
       case 'google': {
         if (!GOOGLE_API_KEY) throw new Error('Google API key is not configured on the server.');
-        // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+        
         const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?key=${GOOGLE_API_KEY}&alt=sse`;
         
-        const inputTokens = estimateTokens(systemPrompt + userMessages.map(m => m.content).join(''));
+        // Calculate input tokens
+        const inputTokens = calculateMessageTokens(userMessages, systemPrompt);
+        console.log(`[Token Tracking] Google - Estimated input tokens: ${inputTokens}`);
+        
         let outputText = '';
+        let hasRecordedTokens = false;
         
         const googlePayload = {
-          contents: userMessages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+          contents: userMessages.map(m => ({ 
+            role: m.role === 'assistant' ? 'model' : 'user', 
+            parts: [{ text: m.content }] 
+          })),
           systemInstruction: { parts: [{ text: systemPrompt }] }
         };
         
@@ -196,7 +256,9 @@ class AiService {
           body: JSON.stringify(googlePayload),
         });
         
-        if (!response.ok || !response.body) throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        if (!response.ok || !response.body) {
+          throw new Error(`Google API Error: ${response.status} ${response.statusText}`);
+        }
         
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -205,48 +267,69 @@ class AiService {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
+          
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const json = JSON.parse(line.substring(6));
                 const chunk = json.candidates?.[0]?.content?.parts?.[0]?.text;
                 
-                const usageMetadata = json.usageMetadata;
-                if (usageMetadata) {
-                   await recordAndFinalize({
-                    input: usageMetadata.promptTokenCount || inputTokens,
-                    output: usageMetadata.candidatesTokenCount || estimateTokens(outputText),
-                    total: usageMetadata.totalTokenCount || (inputTokens + estimateTokens(outputText))
-                  });
-                }
-                
                 if (chunk) {
                   outputText += chunk;
                   yield { chunk };
                 }
+                
+                // Check for usage metadata from Google
+                const usageMetadata = json.usageMetadata;
+                if (usageMetadata && !hasRecordedTokens) {
+                  const apiInputTokens = usageMetadata.promptTokenCount || inputTokens;
+                  const apiOutputTokens = usageMetadata.candidatesTokenCount || estimateTokens(outputText);
+                  const apiTotalTokens = usageMetadata.totalTokenCount || (apiInputTokens + apiOutputTokens);
+                  
+                  console.log(`[Token Tracking] Google API provided metadata - Input: ${apiInputTokens}, Output: ${apiOutputTokens}, Total: ${apiTotalTokens}`);
+                  
+                  await recordTokenUsage(apiInputTokens, apiOutputTokens);
+                  hasRecordedTokens = true;
+                  
+                  yield { 
+                    chunk: '', 
+                    tokenData: { 
+                      input: apiInputTokens, 
+                      output: apiOutputTokens, 
+                      total: apiTotalTokens 
+                    } 
+                  };
+                }
               } catch (e) { 
-                console.error('Error parsing Google stream:', e); 
+                console.warn('[Token Tracking] Error parsing Google stream:', e);
               }
             }
           }
         }
         
-        if (!finalTokenData) {
+        // If we didn't get metadata from the API, use our estimates
+        if (!hasRecordedTokens) {
           const outputTokens = estimateTokens(outputText);
-           await recordAndFinalize({
-            input: inputTokens,
-            output: outputTokens,
-            total: inputTokens + outputTokens
-          });
+          const totalTokens = inputTokens + outputTokens;
+          
+          console.log(`[Token Tracking] Google - Using estimated tokens (no API metadata)`);
+          await recordTokenUsage(inputTokens, outputTokens);
+          
+          yield { 
+            chunk: '', 
+            tokenData: { input: inputTokens, output: outputTokens, total: totalTokens } 
+          };
         }
         break;
       }
       
       case 'zhipu': {
         if (!ZHIPU_API_KEY) throw new Error('ZhipuAI API key is not configured on the server.');
+        
         const stream = streamOpenAICompatResponse(
           'https://open.bigmodel.cn/api/paas/v4/chat/completions', 
           ZHIPU_API_KEY, 
@@ -254,13 +337,19 @@ class AiService {
           userMessages, 
           systemPrompt
         );
+        
         for await (const result of stream) {
           if (result.tokenData) {
-            await recordAndFinalize({
-              input: result.tokenData.input,
-              output: result.tokenData.output,
-              total: result.tokenData.input + result.tokenData.output
-            });
+            const totalTokens = result.tokenData.input + result.tokenData.output;
+            await recordTokenUsage(result.tokenData.input, result.tokenData.output);
+            yield { 
+              chunk: '', 
+              tokenData: { 
+                input: result.tokenData.input, 
+                output: result.tokenData.output, 
+                total: totalTokens 
+              } 
+            };
           } else {
             yield { chunk: result.chunk };
           }
@@ -270,6 +359,7 @@ class AiService {
       
       case 'mistral-small': {
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
+        
         const stream = streamOpenAICompatResponse(
           'https://api.mistral.ai/v1/chat/completions', 
           MISTRAL_API_KEY, 
@@ -277,13 +367,19 @@ class AiService {
           userMessages, 
           systemPrompt
         );
+        
         for await (const result of stream) {
           if (result.tokenData) {
-            await recordAndFinalize({
-              input: result.tokenData.input,
-              output: result.tokenData.output,
-              total: result.tokenData.input + result.tokenData.output
-            });
+            const totalTokens = result.tokenData.input + result.tokenData.output;
+            await recordTokenUsage(result.tokenData.input, result.tokenData.output);
+            yield { 
+              chunk: '', 
+              tokenData: { 
+                input: result.tokenData.input, 
+                output: result.tokenData.output, 
+                total: totalTokens 
+              } 
+            };
           } else {
             yield { chunk: result.chunk };
           }
@@ -293,6 +389,7 @@ class AiService {
       
       case 'mistral-codestral': {
         if (!MISTRAL_API_KEY) throw new Error('Mistral API key is not configured on the server.');
+        
         const stream = streamOpenAICompatResponse(
           'https://api.mistral.ai/v1/chat/completions', 
           MISTRAL_API_KEY, 
@@ -300,13 +397,19 @@ class AiService {
           userMessages, 
           systemPrompt
         );
+        
         for await (const result of stream) {
           if (result.tokenData) {
-            await recordAndFinalize({
-              input: result.tokenData.input,
-              output: result.tokenData.output,
-              total: result.tokenData.input + result.tokenData.output
-            });
+            const totalTokens = result.tokenData.input + result.tokenData.output;
+            await recordTokenUsage(result.tokenData.input, result.tokenData.output);
+            yield { 
+              chunk: '', 
+              tokenData: { 
+                input: result.tokenData.input, 
+                output: result.tokenData.output, 
+                total: totalTokens 
+              } 
+            };
           } else {
             yield { chunk: result.chunk };
           }
@@ -317,9 +420,10 @@ class AiService {
       default:
         throw new Error('Invalid model selected.');
     }
-
-    if (finalTokenData) {
-      yield { chunk: '', tokenData: finalTokenData };
+    
+    // Ensure tokens were recorded
+    if (!tokenDataRecorded) {
+      console.warn('[Token Tracking] ⚠ No token data was recorded during streaming!');
     }
   }
 
@@ -369,7 +473,7 @@ Format as JSON with "questions" array. Each question needs:
 - "explanation": brief explanation of why this answer is correct
 Our conversation:
 ${conversationText.slice(0, 8000)}`;
-    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+    
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -423,7 +527,7 @@ Format as JSON with "questions" array. Each question needs:
 - "answer": the correct option (must match exactly)
 - "explanation": brief explanation that helps students learn
 Focus on the most important concepts students need to master about this topic.`;
-    // *** UPDATED MODEL NAME AS PER YOUR REQUEST ***
+    
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
