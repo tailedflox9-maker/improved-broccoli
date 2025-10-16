@@ -277,7 +277,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-  // Token Analytics View
+  // Token Analytics View - UPDATED VERSION WITH BETTER ERROR HANDLING
   if (viewMode === 'tokens') {
     return (
       <div className="h-full overflow-y-auto bg-grid-slate-900">
@@ -297,27 +297,61 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
             </button>
           </div>
 
+          {/* Loading State */}
           {tokenLoading && !tokenAnalytics && (
             <div className="text-center p-12">
               <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-4"/>
               <p className="text-gray-400">Loading token analytics...</p>
+              <p className="text-gray-500 text-sm mt-2">This may take a few moments...</p>
             </div>
           )}
 
+          {/* Error State */}
           {tokenError && (
             <div className="text-center p-12">
               <AlertTriangle className="w-12 h-12 mx-auto text-red-500 mb-4"/>
               <p className="text-red-400 font-semibold mb-2">Error Loading Analytics</p>
-              <p className="text-gray-400">{tokenError}</p>
-              <button onClick={fetchTokenAnalytics} className="mt-4 btn-primary">
+              <p className="text-gray-400 mb-4">{tokenError}</p>
+              <div className="space-y-2 text-sm text-gray-500 mb-4">
+                <p>Possible issues:</p>
+                <ul className="list-disc list-inside">
+                  <li>Database table 'token_usage' may not exist</li>
+                  <li>RLS policies may be blocking access</li>
+                  <li>No token data has been recorded yet</li>
+                </ul>
+              </div>
+              <button onClick={fetchTokenAnalytics} className="btn-primary">
                 <RefreshCw size={14}/> Retry
               </button>
             </div>
           )}
 
-          {tokenAnalytics && !tokenLoading && (
+          {/* No Data State */}
+          {tokenAnalytics && !tokenLoading && tokenAnalytics.all_time.total_tokens === 0 && (
+            <div className="text-center p-12 bg-gray-900/50 rounded-xl border border-gray-700">
+              <Activity className="w-16 h-16 mx-auto text-gray-600 mb-4"/>
+              <h3 className="text-2xl font-bold text-white mb-2">No Token Data Yet</h3>
+              <p className="text-gray-400 mb-4">
+                Token tracking is set up, but no conversations have been recorded yet.
+              </p>
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 max-w-md mx-auto">
+                <p className="text-blue-300 text-sm">
+                  <strong>To start tracking:</strong>
+                  <br />
+                  1. Have students or teachers send chat messages
+                  <br />
+                  2. Token usage will be automatically recorded
+                  <br />
+                  3. Return here to view analytics
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Data Display */}
+          {tokenAnalytics && !tokenLoading && tokenAnalytics.all_time.total_tokens > 0 && (
             <>
-              {/* Today's Stats */}
+              {/* Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
                 <div className="stats-card bg-gradient-to-br from-blue-900/40 to-blue-800/20">
                   <Zap size={24} className="text-blue-400 mb-3"/>
@@ -373,32 +407,39 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
                     <TrendingUp size={18}/> Daily Token Usage (Last 30 Days)
                   </h3>
                   <div className="p-6">
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={tokenAnalytics.daily_history}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#9ca3af"
-                          tick={{ fill: '#9ca3af' }}
-                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        />
-                        <YAxis 
-                          stroke="#9ca3af"
-                          tick={{ fill: '#9ca3af' }}
-                          tickFormatter={(value) => formatNumber(value)}
-                        />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                          labelStyle={{ color: '#fff' }}
-                          itemStyle={{ color: '#3b82f6' }}
-                          formatter={(value: any) => formatNumber(value)}
-                        />
-                        <Legend wrapperStyle={{ color: '#9ca3af' }} />
-                        <Line type="monotone" dataKey="total_tokens" stroke="#3b82f6" strokeWidth={2} name="Total Tokens" dot={{ fill: '#3b82f6', r: 3 }} />
-                        <Line type="monotone" dataKey="input_tokens" stroke="#10b981" strokeWidth={1.5} name="Input" dot={{ fill: '#10b981', r: 2 }} />
-                        <Line type="monotone" dataKey="output_tokens" stroke="#f59e0b" strokeWidth={1.5} name="Output" dot={{ fill: '#f59e0b', r: 2 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {tokenAnalytics.daily_history.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={tokenAnalytics.daily_history}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis 
+                            dataKey="date" 
+                            stroke="#9ca3af"
+                            tick={{ fill: '#9ca3af' }}
+                            tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          />
+                          <YAxis 
+                            stroke="#9ca3af"
+                            tick={{ fill: '#9ca3af' }}
+                            tickFormatter={(value) => formatNumber(value)}
+                          />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                            labelStyle={{ color: '#fff' }}
+                            itemStyle={{ color: '#3b82f6' }}
+                            formatter={(value: any) => formatNumber(value)}
+                          />
+                          <Legend wrapperStyle={{ color: '#9ca3af' }} />
+                          <Line type="monotone" dataKey="total_tokens" stroke="#3b82f6" strokeWidth={2} name="Total Tokens" dot={{ fill: '#3b82f6', r: 3 }} />
+                          <Line type="monotone" dataKey="input_tokens" stroke="#10b981" strokeWidth={1.5} name="Input" dot={{ fill: '#10b981', r: 2 }} />
+                          <Line type="monotone" dataKey="output_tokens" stroke="#f59e0b" strokeWidth={1.5} name="Output" dot={{ fill: '#f59e0b', r: 2 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="text-center py-12 text-gray-400">
+                        <TrendingUp size={48} className="mx-auto mb-4 opacity-50" />
+                        <p>No historical data available yet</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -516,7 +557,7 @@ export function AdminPanelComponent({ onClose }: AdminPanelProps) {
               </div>
 
               {/* Peak Usage Info */}
-              {tokenAnalytics.week.peak_day && (
+              {tokenAnalytics.week.peak_day && tokenAnalytics.week.peak_tokens > 0 && (
                 <div className="admin-card bg-gradient-to-br from-indigo-900/20 to-purple-900/20 border-indigo-500/30">
                   <div className="p-6">
                     <div className="flex items-center gap-4">
