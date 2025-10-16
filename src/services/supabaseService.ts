@@ -481,16 +481,69 @@ export const createUser = async (userData: { email: string; password: string; fu
     if (!userData.password?.trim() || userData.password.length < 6) throw new Error('Password must be at least 6 characters long');
     if (!userData.full_name?.trim()) throw new Error('Full name is required');
     if (!['student', 'teacher'].includes(userData.role)) throw new Error('Role must be either student or teacher');
+    
     const adminClient = getAdminClient();
+    
+    // Create the auth user
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: userData.email.trim(),
       password: userData.password.trim(),
       email_confirm: true,
-      user_metadata: { full_name: userData.full_name.trim(), role: userData.role }
+      user_metadata: { 
+        full_name: userData.full_name.trim(), 
+        role: userData.role 
+      }
     });
+    
     if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
     if (!authData.user) throw new Error('User creation succeeded but no user data returned');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Wait a moment for the auth user to be created
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Check if profile was created by trigger
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+    
+    if (!existingProfile) {
+      // If trigger didn't create it, create it manually
+      console.log('Profile not created by trigger, creating manually...');
+      const { error: profileError } = await adminClient
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email: userData.email.trim(),
+          full_name: userData.full_name.trim(),
+          role: userData.role,
+          teacher_id: null
+        });
+      
+      if (profileError) {
+        console.error('Failed to create profile manually:', profileError);
+        throw new Error(`Profile creation failed: ${profileError.message}`);
+      }
+    } else if (!existingProfile.full_name || existingProfile.full_name === 'User') {
+      // If profile exists but has default name, update it
+      console.log('Updating profile with correct full_name...');
+      const { error: updateError } = await adminClient
+        .from('profiles')
+        .update({ 
+          full_name: userData.full_name.trim(),
+          role: userData.role 
+        })
+        .eq('id', authData.user.id);
+      
+      if (updateError) {
+        console.error('Failed to update profile:', updateError);
+      }
+    }
+    
+    // Wait a bit more to ensure database consistency
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     return authData.user;
   } catch (error: any) {
     if (error.message?.includes('already registered')) throw new Error('A user with this email address already exists');
